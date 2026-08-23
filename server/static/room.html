@@ -86,6 +86,7 @@
     function tileKey(p, source) { return p.identity + (source === Track.Source.ScreenShare ? '::screen' : '::cam'); }
 
     const room = new Room({ adaptiveStream: true, dynacast: true });
+    window.thRoom = room;   // テスト・デバッグ用に公開
     const audioEls = new Map();
 
     function attachTrack(track, publication, participant, isLocal) {

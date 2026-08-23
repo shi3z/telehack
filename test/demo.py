@@ -76,6 +76,8 @@ async def main():
             ctx = await browser.new_context(
                 viewport={"width": 960, "height": 600},
                 permissions=["camera", "microphone"])
+            # 注: このシンプル版は共有ブラウザのため全員同じフェイクデバイス。
+            # 顔・声つきのリアル版は scenario_real.py を使用。
             await ctx.add_cookies([
                 {"name": "th_session", "value": inject_session(email, ttl=24 * 3600), "url": BASE}])
             page = await ctx.new_page()

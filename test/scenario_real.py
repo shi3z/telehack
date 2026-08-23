@@ -94,11 +94,14 @@ class Bot:
         self.browser = self.ctx = self.page = None
 
     async def launch(self, p):
+        # 声: 生成動画から抽出した本人の音声をループ再生(なければ無音)
+        voice = ASSETS / f"{self.asset}.wav"
+        audio = voice if voice.exists() else ASSETS / "silence.wav"
         args = [
             "--use-fake-device-for-media-stream",
             "--use-fake-ui-for-media-stream",
             "--auto-select-desktop-capture-source=Entire screen",
-            f"--use-file-for-fake-audio-capture={ASSETS/'silence.wav'}",
+            f"--use-file-for-fake-audio-capture={audio}",
         ]
         y4m = ASSETS / f"{self.asset}.y4m"
         if y4m.exists():
@@ -129,9 +132,10 @@ async def playtest(p, bot: Bot, work_id: int, actions, seconds: int):
     Xvfb 上のヘッドありブラウザで本物の画面を録る。
     """
     ensure_xvfb()
+    voice = ASSETS / f"{bot.asset}.wav"
     args = [
         "--use-fake-device-for-media-stream",
-        f"--use-file-for-fake-audio-capture={ASSETS/'silence.wav'}",
+        f"--use-file-for-fake-audio-capture={voice if voice.exists() else ASSETS/'silence.wav'}",
         "--auto-select-desktop-capture-source=Entire screen",
         "--window-size=1280,800", "--window-position=0,0",
         "--disable-features=Translate", "--lang=ja",
