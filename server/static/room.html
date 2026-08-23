@@ -6,15 +6,30 @@
   <title>Telehack — 会議室</title>
   <link rel="stylesheet" href="/style.css">
   <script src="/livekit-client.umd.min.js"></script>
+  <script src="/common.js"></script>
 </head>
 <body>
   <div class="roombar">
     <div class="brand"><span class="logo">◆</span> <span id="roomTitle">会議室</span></div>
     <div class="right" style="display:flex;gap:10px;align-items:center">
+      <span class="timerchip" id="timerChip" style="display:none"></span>
       <span class="badge rec" id="recBadge" style="display:none">REC 録画中</span>
       <span id="status" style="color:var(--muted);font-size:.85rem">接続中…</span>
     </div>
   </div>
+  <div class="presbar" id="presBar"></div>
+
+  <!-- ステージ (主催者配信 / チーム発表) -->
+  <div id="stagePanel">
+    <div class="stage-head">
+      <span id="stageLabel">📡 全体配信</span>
+      <span>
+        <button class="small secondary" id="stageMini">縮小</button>
+      </span>
+    </div>
+    <div class="stage-videos" id="stageVideos"></div>
+  </div>
+
   <div class="videos" id="videos"></div>
   <div class="controls">
     <button id="micBtn">🎤 ミュート</button>
@@ -30,7 +45,7 @@
 
     const videosEl = document.getElementById('videos');
     const statusEl = document.getElementById('status');
-    const tiles = new Map();   // key -> {el, videoEl, nameEl}
+    const tiles = new Map();
 
     // --- クリックで拡大(フォーカス表示) ---
     let focusedKey = null;
@@ -39,10 +54,7 @@
       videosEl.classList.toggle('focus-mode', !!focusedKey);
       for (const [k, t] of tiles) t.el.classList.toggle('focused', k === focusedKey);
     }
-    function toggleFocus(key) {
-      focusedKey = (focusedKey === key) ? null : key;
-      applyFocus();
-    }
+    function toggleFocus(key) { focusedKey = (focusedKey === key) ? null : key; applyFocus(); }
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && focusedKey) { focusedKey = null; applyFocus(); }
     });
@@ -71,9 +83,7 @@
       if (t) { t.el.remove(); tiles.delete(key); }
       if (key === focusedKey) { focusedKey = null; applyFocus(); }
     }
-    function tileKey(participant, source) {
-      return participant.identity + (source === Track.Source.ScreenShare ? '::screen' : '::cam');
-    }
+    function tileKey(p, source) { return p.identity + (source === Track.Source.ScreenShare ? '::screen' : '::cam'); }
 
     const room = new Room({ adaptiveStream: true, dynacast: true });
     const audioEls = new Map();
@@ -86,13 +96,11 @@
         const key = tileKey(participant, publication.source);
         const t = ensureTile(key, label);
         track.attach(t.videoEl);
-        // 画面共有が始まったら自動で拡大(手動フォーカス中は邪魔しない)
         if (publication.source === Track.Source.ScreenShare && !focusedKey) {
-          focusedKey = key;
-          applyFocus();
+          focusedKey = key; applyFocus();
         }
         if (isLocal && publication.source !== Track.Source.ScreenShare) {
-          t.videoEl.style.transform = 'scaleX(-1)';  // 自分のカメラはミラー表示
+          t.videoEl.style.transform = 'scaleX(-1)';
           t.videoEl.muted = true;
         }
       } else if (track.kind === 'audio' && !isLocal) {
@@ -107,9 +115,18 @@
       if (a) { a.remove(); audioEls.delete(publication.trackSid); }
       if (track.kind === 'video') removeTile(tileKey(participant, publication.source));
     }
-
     function updateRec() {
       document.getElementById('recBadge').style.display = room.isRecording ? '' : 'none';
+    }
+
+    // --- サーバーからのデータメッセージ ---
+    function onData(payload) {
+      let msg;
+      try { msg = JSON.parse(new TextDecoder().decode(payload)); } catch { return; }
+      if (msg.type === 'announce') toast('📢 ' + msg.text);
+      else if (msg.type === 'timer' || msg.type === 'pres') refreshState();
+      else if (msg.type === 'move') refreshState();
+      else if (msg.type === 'reveal') ceremony(msg.rank, msg.title, msg.team, msg.votes);
     }
 
     room
@@ -125,8 +142,135 @@
         const active = new Set(speakers.map(s => s.identity + '::cam'));
         for (const [key, t] of tiles) t.el.classList.toggle('speaking', active.has(key));
       })
+      .on(RoomEvent.DataReceived, (payload) => onData(payload))
       .on(RoomEvent.RecordingStatusChanged, updateRec)
       .on(RoomEvent.Disconnected, () => { location.href = '/lobby.html'; });
+
+    // --- ステージ受信 (主催者配信 / 発表の視聴) ---
+    const stageRoom = new Room({ adaptiveStream: true });
+    const stagePanel = document.getElementById('stagePanel');
+    const stageVideos = document.getElementById('stageVideos');
+    const stageAudio = new Map();
+    let suppressStageAudio = false;   // 自分が発表中は自分の声を二重再生しない
+    let stageMini = false;
+
+    document.getElementById('stageMini').onclick = () => {
+      stageMini = !stageMini;
+      stagePanel.classList.toggle('mini', stageMini);
+      document.getElementById('stageMini').textContent = stageMini ? '拡大' : '縮小';
+    };
+
+    function updateStagePanel() {
+      const hasVideo = stageVideos.children.length > 0;
+      stagePanel.classList.toggle('show', hasVideo);
+    }
+    stageRoom
+      .on(RoomEvent.TrackSubscribed, (track, pub, p) => {
+        if (track.kind === 'video') {
+          const v = document.createElement('video');
+          v.autoplay = true; v.playsInline = true;
+          v.dataset.sid = pub.trackSid;
+          track.attach(v);
+          stageVideos.appendChild(v);
+          document.getElementById('stageLabel').textContent = '📡 ' + (p.name || p.identity);
+          updateStagePanel();
+        } else if (track.kind === 'audio') {
+          const a = track.attach();
+          a.muted = suppressStageAudio;
+          stageAudio.set(pub.trackSid, a);
+          document.body.appendChild(a);
+        }
+      })
+      .on(RoomEvent.TrackUnsubscribed, (track, pub) => {
+        track.detach();
+        stageVideos.querySelectorAll(`[data-sid="${pub.trackSid}"]`).forEach(e => e.remove());
+        const a = stageAudio.get(pub.trackSid);
+        if (a) { a.remove(); stageAudio.delete(pub.trackSid); }
+        updateStagePanel();
+      })
+      .on(RoomEvent.DataReceived, (payload) => onData(payload));
+
+    async function connectStage() {
+      try {
+        const res = await jpost('/api/stage/token');
+        await stageRoom.connect(res.ws_url, res.token);
+      } catch (e) { console.warn('stage connect failed', e); }
+    }
+
+    // --- 発表時のステージ配信 (自チームが発表中に publish 権限付きで接続し直す) ---
+    let stagePub = null;
+    let presenting = false;
+    async function startPresenting() {
+      if (presenting) return;
+      presenting = true;
+      suppressStageAudio = true;
+      for (const a of stageAudio.values()) a.muted = true;
+      try {
+        const res = await jpost('/api/stage/token');
+        if (!res.can_publish) { presenting = false; return; }
+        stagePub = new Room();
+        await stagePub.connect(res.ws_url, res.token);
+        await stagePub.localParticipant.enableCameraAndMicrophone();
+        toast('🎤 あなたのチームの発表中です!カメラとマイクがステージに配信されています');
+      } catch (e) {
+        console.warn(e); presenting = false;
+      }
+    }
+    async function stopPresenting() {
+      if (!presenting) return;
+      presenting = false;
+      suppressStageAudio = false;
+      for (const a of stageAudio.values()) a.muted = false;
+      if (stagePub) { try { await stagePub.disconnect(); } catch {} stagePub = null; }
+    }
+
+    // --- 進行状態の同期 ---
+    let state = null;
+    async function refreshState() {
+      try { state = await api('/api/state'); } catch { return; }
+      renderState();
+      // 配置指示 (管理者は自由に動ける)
+      if (!state.me.is_admin) {
+        if (state.placement === 'hall' && roomName !== state.hall_room) {
+          toast('📢 全体会場に移動します'); setTimeout(() => location.href = `/room.html?room=${state.hall_room}`, 1500);
+          return;
+        }
+        if (state.placement === 'teams' && state.me.team_room && roomName !== state.me.team_room) {
+          toast('📢 チームルームに移動します'); setTimeout(() => location.href = `/room.html?room=${state.me.team_room}`, 1500);
+          return;
+        }
+      }
+      // 発表モードの配信制御
+      if (state.presentation && state.presentation.i_am_presenting) startPresenting();
+      else stopPresenting();
+    }
+    function renderState() {
+      if (!state) return;
+      const chip = document.getElementById('timerChip');
+      const pres = state.presentation;
+      const bar = document.getElementById('presBar');
+      if (pres) {
+        const remain = pres.end_at - Math.floor(Date.now() / 1000);
+        const next = pres.order[pres.index + 1];
+        bar.innerHTML = `🎤 発表モード | 現在: <b>${esc(pres.current_team_name || '?')}</b>` +
+          ` <span class="timerchip ${remain < 30 ? 'warn' : ''}">${fmtCountdown(remain)}</span>` +
+          (next ? ` | 次: ${esc(next.name)}` : ' | 最後の発表です') +
+          ` <span style="color:var(--muted)">(${pres.index + 1}/${pres.order.length})</span>`;
+        bar.classList.add('show');
+      } else {
+        bar.classList.remove('show');
+      }
+      if (state.timer) {
+        const remain = state.timer.end_at - Math.floor(Date.now() / 1000);
+        if (remain > 0) {
+          chip.style.display = '';
+          chip.className = 'timerchip' + (remain < 60 ? ' warn' : '');
+          chip.textContent = '⏱ ' + (state.timer.label ? state.timer.label + ' ' : '') + fmtCountdown(remain);
+        } else chip.style.display = 'none';
+      } else chip.style.display = 'none';
+    }
+    setInterval(renderState, 1000);
+    setInterval(refreshState, 5000);
 
     async function main() {
       const res = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/join`, {method: 'POST'});
@@ -138,6 +282,8 @@
       await room.connect(ws_url, token);
       statusEl.textContent = '接続済み';
       updateRec();
+      connectStage();
+      refreshState();
       try {
         await room.localParticipant.enableCameraAndMicrophone();
       } catch (e) {
@@ -150,23 +296,29 @@
     document.getElementById('micBtn').onclick = async (e) => {
       micOn = !micOn;
       await room.localParticipant.setMicrophoneEnabled(micOn);
+      if (stagePub) await stagePub.localParticipant.setMicrophoneEnabled(micOn);
       e.target.textContent = micOn ? '🎤 ミュート' : '🎤 ミュート解除';
       e.target.classList.toggle('off', !micOn);
     };
     document.getElementById('camBtn').onclick = async (e) => {
       camOn = !camOn;
       await room.localParticipant.setCameraEnabled(camOn);
+      if (stagePub) await stagePub.localParticipant.setCameraEnabled(camOn);
       e.target.textContent = camOn ? '📷 カメラOFF' : '📷 カメラON';
       e.target.classList.toggle('off', !camOn);
     };
     document.getElementById('shareBtn').onclick = async (e) => {
       try {
         sharing = !sharing;
-        await room.localParticipant.setScreenShareEnabled(sharing);
+        // 発表中は画面共有もステージへ
+        const target = (presenting && stagePub) ? stagePub : room;
+        await target.localParticipant.setScreenShareEnabled(sharing);
         e.target.textContent = sharing ? '🖥 共有停止' : '🖥 画面共有';
       } catch { sharing = false; }
     };
     document.getElementById('leaveBtn').onclick = async () => {
+      await stopPresenting();
+      try { await stageRoom.disconnect(); } catch {}
       await room.disconnect();
       location.href = '/lobby.html';
     };

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Telehack — 全体配信</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/livekit-client.umd.min.js"></script>
+  <script src="/common.js"></script>
+</head>
+<body>
+  <div class="roombar">
+    <div class="brand"><span class="logo">◆</span> 📡 全体配信(主催者)</div>
+    <div class="right" style="display:flex;gap:10px;align-items:center">
+      <span id="status" style="color:var(--muted);font-size:.85rem">接続中…</span>
+    </div>
+  </div>
+  <div class="container">
+    <p class="sub">ここで配信を開始すると、<b>全ブレイクアウトルームの参加者の画面に映像が表示されます</b>。カメラと画面共有を同時に配信することもできます。このページを閉じるか「配信終了」で停止します。</p>
+    <div class="videos" id="videos" style="padding:0;margin-top:16px"></div>
+  </div>
+  <div class="controls">
+    <button id="camBtn" class="secondary">📷 カメラ開始</button>
+    <button id="micBtn" class="secondary">🎤 マイク開始</button>
+    <button id="shareBtn" class="secondary">🖥 画面共有</button>
+    <button id="endBtn" class="danger">配信終了</button>
+  </div>
+  <script>
+    const { Room, RoomEvent, Track } = LivekitClient;
+    const videosEl = document.getElementById('videos');
+    const statusEl = document.getElementById('status');
+    let room = null;
+    let camOn = false, micOn = false, sharing = false;
+
+    function addPreview(pub) {
+      if (!pub.track || pub.track.kind !== 'video') return;
+      const el = document.createElement('div');
+      el.className = 'tile';
+      el.dataset.sid = pub.trackSid;
+      const v = document.createElement('video');
+      v.autoplay = true; v.playsInline = true; v.muted = true;
+      if (pub.source === Track.Source.Camera) v.style.transform = 'scaleX(-1)';
+      pub.track.attach(v);
+      const name = document.createElement('div');
+      name.className = 'name';
+      name.textContent = pub.source === Track.Source.ScreenShare ? '画面共有 (プレビュー)' : 'カメラ (プレビュー)';
+      el.appendChild(v); el.appendChild(name);
+      videosEl.appendChild(el);
+    }
+    function removePreview(pub) {
+      videosEl.querySelectorAll(`[data-sid="${pub.trackSid}"]`).forEach(e => e.remove());
+    }
+
+    async function main() {
+      const res = await jpost('/api/stage/token');
+      if (!res.can_publish) { statusEl.textContent = '配信権限がありません(管理者のみ)'; return; }
+      room = new Room();
+      room.on(RoomEvent.LocalTrackPublished, (pub) => addPreview(pub))
+          .on(RoomEvent.LocalTrackUnpublished, (pub) => removePreview(pub));
+      await room.connect(res.ws_url, res.token);
+      statusEl.textContent = '接続済み(まだ何も配信していません)';
+    }
+
+    document.getElementById('camBtn').onclick = async (e) => {
+      camOn = !camOn;
+      await room.localParticipant.setCameraEnabled(camOn);
+      e.target.textContent = camOn ? '📷 カメラ停止' : '📷 カメラ開始';
+      e.target.className = camOn ? '' : 'secondary';
+      update();
+    };
+    document.getElementById('micBtn').onclick = async (e) => {
+      micOn = !micOn;
+      await room.localParticipant.setMicrophoneEnabled(micOn);
+      e.target.textContent = micOn ? '🎤 マイク停止' : '🎤 マイク開始';
+      e.target.className = micOn ? '' : 'secondary';
+      update();
+    };
+    document.getElementById('shareBtn').onclick = async (e) => {
+      try {
+        sharing = !sharing;
+        await room.localParticipant.setScreenShareEnabled(sharing);
+        e.target.textContent = sharing ? '🖥 共有停止' : '🖥 画面共有';
+        e.target.className = sharing ? '' : 'secondary';
+      } catch { sharing = false; }
+      update();
+    };
+    function update() {
+      statusEl.textContent = (camOn || micOn || sharing) ? '🔴 配信中(全ルームに表示されています)' : '接続済み(配信停止中)';
+    }
+    document.getElementById('endBtn').onclick = async () => {
+      if (room) await room.disconnect();
+      location.href = '/admin.html';
+    };
+    window.addEventListener('beforeunload', () => { if (room) room.disconnect(); });
+
+    main().catch(err => { statusEl.textContent = 'エラー: ' + err.message; });
+  </script>
+</body>
+</html>

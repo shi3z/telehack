@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Telehack — プレイ</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/livekit-client.umd.min.js"></script>
+  <script src="/common.js"></script>
+  <style>
+    body { display: flex; flex-direction: column; height: 100vh; }
+    .playbar { display: flex; justify-content: space-between; align-items: center;
+      padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--border); }
+    #gameFrame { flex: 1; border: none; width: 100%; background: #fff; }
+    #setup { flex: 1; display: flex; align-items: center; justify-content: center; }
+    #camPreview { position: fixed; right: 14px; bottom: 14px; width: 200px; aspect-ratio: 4/3;
+      border-radius: 10px; border: 2px solid var(--accent); object-fit: cover; z-index: 100;
+      transform: scaleX(-1); background: #000; }
+  </style>
+</head>
+<body>
+  <div class="playbar">
+    <div class="brand"><span class="logo">◆</span> 🎮 <span id="workTitle">作品</span></div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <span class="badge rec" id="recBadge" style="display:none">REC プレイ録画中</span>
+      <a id="openTab" href="#" target="_blank" style="display:none">別タブで開く</a>
+      <button class="danger small" id="endBtn" style="display:none">プレイ終了</button>
+    </div>
+  </div>
+
+  <div id="setup">
+    <div class="card">
+      <h1>🎮 <span id="workTitle2"></span> を遊ぶ</h1>
+      <p class="sub">プレイの様子(画面とあなたのカメラ)が自動的に録画されます。<br><br>
+        「開始」を押すと画面共有の選択ダイアログが出ます。<b>「このタブ」を選択</b>してください。
+        作品が別タブで開く場合は、そのタブや画面全体を選んでもOKです。</p>
+      <button id="startBtn" style="width:100%">🔴 録画を開始して遊ぶ</button>
+      <div class="msg" id="msg"></div>
+    </div>
+  </div>
+  <iframe id="gameFrame" style="display:none" allow="autoplay; fullscreen; gamepad; microphone; camera"></iframe>
+  <video id="camPreview" style="display:none" autoplay playsinline muted></video>
+
+  <script>
+    const { Room } = LivekitClient;
+    const params = new URLSearchParams(location.search);
+    const workId = params.get('work');
+    if (!workId) location.href = '/lobby.html';
+
+    const msg = document.getElementById('msg');
+    let room = null, playInfo = null;
+
+    async function init() {
+      try {
+        playInfo = await jpost(`/api/works/${workId}/play`);
+      } catch (e) {
+        msg.className = 'msg err'; msg.textContent = e.detail || '作品を読み込めませんでした';
+        return;
+      }
+      document.getElementById('workTitle').textContent = playInfo.work.title;
+      document.getElementById('workTitle2').textContent = playInfo.work.title;
+      document.title = `Telehack — ${playInfo.work.title}`;
+      const openTab = document.getElementById('openTab');
+      openTab.href = playInfo.work.url;
+    }
+
+    document.getElementById('startBtn').onclick = async () => {
+      const btn = document.getElementById('startBtn');
+      btn.disabled = true; btn.textContent = '準備中…';
+      try {
+        // 画面キャプチャ (できれば自タブを推奨)
+        const screen = await navigator.mediaDevices.getDisplayMedia({
+          video: {frameRate: 15},
+          audio: true,
+          preferCurrentTab: true,
+          selfBrowserSurface: 'include',
+        });
+        // カメラ+マイク
+        let cam = null;
+        try {
+          cam = await navigator.mediaDevices.getUserMedia({video: {width: 640, height: 480}, audio: true});
+        } catch { /* カメラ拒否でも画面のみで続行 */ }
+
+        room = new Room();
+        await room.connect(playInfo.ws_url, playInfo.token);
+        await room.localParticipant.publishTrack(screen.getVideoTracks()[0], {name: 'screen', source: 'screen_share'});
+        if (screen.getAudioTracks()[0])
+          await room.localParticipant.publishTrack(screen.getAudioTracks()[0], {name: 'screen-audio', source: 'screen_share_audio'});
+        if (cam) {
+          await room.localParticipant.publishTrack(cam.getVideoTracks()[0], {name: 'camera', source: 'camera'});
+          if (cam.getAudioTracks()[0])
+            await room.localParticipant.publishTrack(cam.getAudioTracks()[0], {name: 'mic', source: 'microphone'});
+          const pv = document.getElementById('camPreview');
+          pv.srcObject = new MediaStream([cam.getVideoTracks()[0]]);
+          pv.style.display = '';
+        }
+        // 画面共有を切られたら録画終了扱い
+        screen.getVideoTracks()[0].addEventListener('ended', endPlay);
+
+        // ゲーム画面を表示
+        document.getElementById('setup').style.display = 'none';
+        const frame = document.getElementById('gameFrame');
+        frame.src = playInfo.work.url;
+        frame.style.display = '';
+        document.getElementById('recBadge').style.display = '';
+        document.getElementById('endBtn').style.display = '';
+        document.getElementById('openTab').style.display = '';
+        toast('🔴 録画中!ゲームが表示されない場合は「別タブで開く」を使ってください');
+      } catch (e) {
+        console.error(e);
+        btn.disabled = false; btn.textContent = '🔴 録画を開始して遊ぶ';
+        msg.className = 'msg err';
+        msg.textContent = '画面共有がキャンセルされたか、開始に失敗しました: ' + e.message;
+      }
+    };
+
+    async function endPlay() {
+      if (room) { try { await room.disconnect(); } catch {} room = null; }
+      location.href = '/lobby.html';
+    }
+    document.getElementById('endBtn').onclick = endPlay;
+    window.addEventListener('beforeunload', () => { if (room) room.disconnect(); });
+
+    init();
+  </script>
+</body>
+</html>

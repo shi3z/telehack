@@ -5,46 +5,92 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Telehack — ロビー</title>
   <link rel="stylesheet" href="/style.css">
+  <script src="/common.js"></script>
 </head>
 <body>
   <div class="topbar">
-    <div class="brand"><span class="logo">◆</span> Telehack</div>
+    <div class="brand"><span class="logo">◆</span> <span id="hackName">Telehack</span></div>
     <div class="right">
+      <span class="timerchip" id="timerChip" style="display:none"></span>
       <span id="userName"></span>
       <a id="adminLink" href="/admin.html" style="display:none">管理画面</a>
       <button class="secondary small" onclick="logout()">ログアウト</button>
     </div>
   </div>
   <div class="container">
-    <h1>ルーム一覧</h1>
-    <p class="sub">参加したいルームを選んでください。<span class="badge rec">REC</span> 表示中のルームは録画されています。</p>
+    <p class="sub" id="myTeam" style="margin-top:4px"></p>
+
+    <h1 style="margin-top:8px">ルーム一覧</h1>
     <div class="room-grid" id="rooms"></div>
-    <p class="sub" id="empty" style="display:none; margin-top:24px">まだルームがありません。運営がルームを作成するとここに表示されます。</p>
+    <p class="sub" id="emptyRooms" style="display:none; margin-top:16px">まだルームがありません。</p>
+
+    <h1 style="margin-top:34px">🎮 作品ギャラリー</h1>
+    <p class="sub">他チームの作品を「遊ぶ」と、プレイ画面とあなたのカメラが自動録画されます。<span id="voteHint"></span></p>
+    <div id="myWorkBox" style="display:none; margin-bottom:14px" class="toolbar">
+      <b style="white-space:nowrap">自チームの作品:</b>
+      <input type="text" id="wTitle" placeholder="作品タイトル" style="flex:1;min-width:140px;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
+      <input type="text" id="wUrl" placeholder="https://... (作品のURL)" style="flex:2;min-width:220px;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
+      <button onclick="saveWork()">登録/更新</button>
+    </div>
+    <div class="room-grid" id="works"></div>
+    <p class="sub" id="emptyWorks" style="display:none">まだ作品が登録されていません。</p>
   </div>
   <script>
-    async function api(path, opts) {
-      const res = await fetch(path, opts);
-      if (res.status === 401) { location.href = '/'; throw new Error('unauthorized'); }
-      return res.json();
-    }
-    async function logout() { await fetch('/api/logout', {method: 'POST'}); location.href = '/'; }
+    let state = null, me = null, lastRevealStage = null;
 
-    async function load() {
-      const me = await api('/api/me');
+    async function loadState() {
+      try { state = await api('/api/state'); } catch { return; }
+      me = state.me;
+      document.getElementById('hackName').textContent = state.hackathon.name;
       document.getElementById('userName').textContent = me.name || me.email;
       if (me.is_admin) document.getElementById('adminLink').style.display = '';
+      document.getElementById('myTeam').textContent =
+        me.team_name ? `あなたのチーム: ${me.team_name}` : 'チーム未割り当て(運営にお問い合わせください)';
+      // 配置指示に従って自動移動 (管理者は対象外)
+      if (!me.is_admin) {
+        if (state.placement === 'hall') { location.href = `/room.html?room=${state.hall_room}`; return; }
+        if (state.placement === 'teams' && me.team_room) { location.href = `/room.html?room=${me.team_room}`; return; }
+      }
+      // 結果発表 (ポーリング検知)
+      const items = state.reveal.items || [];
+      if (lastRevealStage !== null && state.reveal.stage > lastRevealStage && items.length) {
+        const latest = items[items.length - 1];
+        ceremony(latest.rank, latest.title, latest.team, latest.votes);
+      }
+      lastRevealStage = state.reveal.stage;
+      renderTimer();
+    }
+    function renderTimer() {
+      const chip = document.getElementById('timerChip');
+      if (state && state.timer) {
+        const remain = state.timer.end_at - Math.floor(Date.now() / 1000);
+        if (remain > 0) {
+          chip.style.display = '';
+          chip.className = 'timerchip' + (remain < 60 ? ' warn' : '');
+          chip.textContent = '⏱ ' + (state.timer.label ? state.timer.label + ' ' : '') + fmtCountdown(remain);
+          return;
+        }
+      }
+      chip.style.display = 'none';
+    }
+    setInterval(renderTimer, 1000);
+
+    async function loadRooms() {
       const rooms = await api('/api/rooms');
       const grid = document.getElementById('rooms');
       grid.innerHTML = '';
-      document.getElementById('empty').style.display = rooms.length ? 'none' : '';
+      document.getElementById('emptyRooms').style.display = rooms.length ? 'none' : '';
       for (const r of rooms) {
         const card = document.createElement('div');
         card.className = 'room-card';
+        if (r.is_mine) card.style.borderColor = 'var(--accent2)';
         card.innerHTML = `
           <div class="title"></div>
           <div class="desc"></div>
           <div class="meta">
             <span>👥 ${r.participants}人</span>
+            ${r.kind === 'hall' ? '<span class="badge live">全体会場</span>' : ''}
+            ${r.is_mine ? '<span class="badge live">あなたのチーム</span>' : ''}
             ${r.participants > 0 ? '<span class="badge live">LIVE</span>' : ''}
             ${r.recording ? '<span class="badge rec">REC</span>' : ''}
           </div>
@@ -55,8 +101,58 @@
         grid.appendChild(card);
       }
     }
-    load();
-    setInterval(load, 10000);
+
+    async function loadWorks() {
+      const data = await api('/api/works');
+      document.getElementById('voteHint').textContent =
+        data.voting_open ? '🗳 投票受付中!面白かった他チームの作品に1票入れられます(変更可)。' : '';
+      const grid = document.getElementById('works');
+      grid.innerHTML = '';
+      document.getElementById('emptyWorks').style.display = data.works.length ? 'none' : '';
+      if (me && me.team_id) {
+        document.getElementById('myWorkBox').style.display = 'flex';
+        const mine = data.works.find(w => w.mine);
+        if (mine && !document.getElementById('wTitle').matches(':focus') && !document.getElementById('wUrl').matches(':focus')) {
+          if (!document.getElementById('wTitle').value) document.getElementById('wTitle').value = mine.title;
+          if (!document.getElementById('wUrl').value) document.getElementById('wUrl').value = mine.url;
+        }
+      }
+      for (const w of data.works) {
+        const card = document.createElement('div');
+        card.className = 'work-card' + (data.my_vote === w.id ? ' voted' : '');
+        card.innerHTML = `
+          <div class="wtitle"></div>
+          <div class="wteam"></div>
+          <div class="wurl"></div>
+          <div class="wactions">
+            <button class="small" onclick="playWork(${w.id})">▶ 遊ぶ(録画されます)</button>
+            ${data.voting_open && !w.mine ? `<button class="small ${data.my_vote === w.id ? '' : 'secondary'}" onclick="vote(${w.id})">${data.my_vote === w.id ? '✓ 投票済み' : '🗳 投票する'}</button>` : ''}
+            ${w.mine ? '<span class="badge live">自チーム</span>' : ''}
+            ${w.votes != null ? `<span class="badge live">${w.votes}票</span>` : ''}
+          </div>`;
+        card.querySelector('.wtitle').textContent = w.title;
+        card.querySelector('.wteam').textContent = w.team_name ? `by ${w.team_name}` : '(匿名)';
+        card.querySelector('.wurl').textContent = w.url;
+        grid.appendChild(card);
+      }
+    }
+
+    async function saveWork() {
+      const title = document.getElementById('wTitle').value.trim();
+      const url = document.getElementById('wUrl').value.trim();
+      if (!title || !url) return toast('タイトルとURLを入力してください');
+      try { await jpost('/api/works', {title, url}); toast('作品を登録しました'); loadWorks(); }
+      catch (e) { toast(e.detail || '登録に失敗しました'); }
+    }
+    function playWork(id) { location.href = `/play.html?work=${id}`; }
+    async function vote(id) {
+      try { await jpost(`/api/works/${id}/vote`); toast('投票しました!'); loadWorks(); }
+      catch (e) { toast(e.detail || '投票できませんでした'); }
+    }
+
+    async function loadAll() { await loadState(); loadRooms(); loadWorks(); }
+    loadAll();
+    setInterval(loadAll, 7000);
   </script>
 </body>
 </html>

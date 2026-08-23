@@ -69,6 +69,64 @@ th { color: var(--muted); font-weight: 600; font-size: .8rem; }
 .tabpane { display: none; background: var(--panel); border: 1px solid var(--border);
   border-top: none; border-radius: 0 0 12px 12px; padding: 20px; }
 .tabpane.active { display: block; }
+/* --- トースト通知 --- */
+#toastBox { position: fixed; top: 70px; left: 50%; transform: translateX(-50%); z-index: 3000;
+  display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
+.toast {
+  background: var(--accent); color: #fff; font-weight: 600; font-size: 1rem;
+  padding: 12px 22px; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.5);
+  opacity: 0; transform: translateY(-10px); transition: all .3s; max-width: 80vw;
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+/* --- 共有タイマー / 発表バナー --- */
+.timerchip {
+  background: var(--panel2); border: 1px solid var(--border); border-radius: 999px;
+  padding: 4px 14px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.timerchip.warn { color: var(--danger); border-color: var(--danger); }
+.presbar {
+  display: none; align-items: center; gap: 14px; padding: 8px 16px;
+  background: linear-gradient(90deg, rgba(108,123,255,.25), rgba(78,205,196,.2));
+  border-bottom: 1px solid var(--border); font-size: .95rem;
+}
+.presbar.show { display: flex; flex-wrap: wrap; }
+.presbar b { color: var(--accent2); }
+/* --- ステージ (全体配信/発表) --- */
+#stagePanel {
+  display: none; position: fixed; z-index: 1500; inset: 60px 16px 90px 16px;
+  background: rgba(10,12,24,.96); border: 1px solid var(--accent); border-radius: 14px;
+  overflow: hidden; flex-direction: column;
+}
+#stagePanel.show { display: flex; }
+#stagePanel.mini { inset: auto 16px 90px auto; width: 320px; height: 200px; }
+#stagePanel .stage-head { display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 12px; font-size: .85rem; background: rgba(108,123,255,.15); }
+#stagePanel .stage-videos { flex: 1; display: flex; gap: 6px; padding: 6px; min-height: 0; }
+#stagePanel .stage-videos video { flex: 1; min-width: 0; object-fit: contain; background: #000; border-radius: 8px; }
+/* --- 結果発表 --- */
+#ceremonyOverlay {
+  position: fixed; inset: 0; z-index: 4000; background: rgba(5,6,15,.94);
+  display: flex; align-items: center; justify-content: center;
+}
+.ceremony-inner { text-align: center; }
+.ceremony-rank { font-size: 4rem; font-weight: 800; color: #ffd76a; text-shadow: 0 0 40px rgba(255,215,106,.5); }
+.ceremony-drum { font-size: 1.6rem; margin-top: 24px; animation: shake .15s infinite; }
+@keyframes shake { 50% { transform: translateX(3px) rotate(1deg); } }
+.ceremony-title { font-size: 2.4rem; font-weight: 800; margin-top: 20px; }
+.ceremony-team { font-size: 1.3rem; color: var(--accent2); margin-top: 8px; }
+.ceremony-votes { color: var(--muted); margin: 10px 0 24px; }
+#ceremonyOverlay.revealed .ceremony-rank { animation: pop .5s; }
+@keyframes pop { 0% { transform: scale(.4); } 70% { transform: scale(1.15); } 100% { transform: scale(1); } }
+/* --- 作品ギャラリー --- */
+.work-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.work-card .wtitle { font-weight: 700; font-size: 1.05rem; }
+.work-card .wteam { color: var(--accent2); font-size: .85rem; }
+.work-card .wurl { color: var(--muted); font-size: .78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.work-card .wactions { display: flex; gap: 8px; margin-top: 4px; }
+.work-card.voted { border-color: var(--accent2); box-shadow: 0 0 0 1px var(--accent2); }
 /* --- 名簿コンソール --- */
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 16px 0; }
 .stat {

@@ -5,28 +5,86 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Telehack — 管理画面</title>
   <link rel="stylesheet" href="/style.css">
+  <script src="/common.js"></script>
 </head>
 <body>
   <div class="topbar">
-    <div class="brand"><span class="logo">◆</span> Telehack 管理画面</div>
+    <div class="brand"><span class="logo">◆</span> Telehack 管理画面 <span id="hackName" style="color:var(--muted);font-weight:normal;font-size:.9rem"></span></div>
     <div class="right">
       <a href="/lobby.html">ロビーへ</a>
       <button class="secondary small" onclick="logout()">ログアウト</button>
     </div>
   </div>
-  <div class="container">
+  <div class="container" style="max-width:1000px">
     <div class="tabs">
-      <button class="active" data-tab="rooms">ルーム</button>
+      <button class="active" data-tab="control">🎛 進行</button>
+      <button data-tab="rooms">ルーム</button>
       <button data-tab="recordings">録画</button>
       <a href="/roster.html"><button type="button">参加者名簿 ↗</button></a>
+      <a href="/stage.html"><button type="button">📡 全体配信 ↗</button></a>
     </div>
 
-    <!-- ルーム -->
-    <div class="tabpane active" id="pane-rooms">
-      <h2>新しいルームを作成</h2>
+    <!-- ============ 進行 ============ -->
+    <div class="tabpane active" id="pane-control">
+
+      <h2>📢 全ルームへお知らせ</h2>
       <div class="row">
-        <div><label>ルーム名</label><input type="text" id="roomTitle" placeholder="チームA ブレイクアウト"></div>
-        <div><label>説明(任意)</label><input type="text" id="roomDesc" placeholder="チームAの作業部屋"></div>
+        <div><input type="text" id="announceText" placeholder="全ブレイクアウトルームに通知するメッセージ"></div>
+        <div style="flex:0;min-width:auto"><button onclick="announce()">送信</button></div>
+      </div>
+
+      <h2>🚪 参加者の配置(ワンボタン)</h2>
+      <div class="row" style="align-items:center">
+        <div style="flex:0;min-width:auto"><button id="plHall" onclick="setPlacement('hall')">📣 全員を全体会場へ召集</button></div>
+        <div style="flex:0;min-width:auto"><button id="plTeams" onclick="setPlacement('teams')">👥 全員をチームルームへ送出</button></div>
+        <div style="flex:0;min-width:auto"><button id="plFree" class="secondary" onclick="setPlacement('free')">🕊 自由行動に戻す</button></div>
+        <div style="flex:0;min-width:auto"><span class="sub" id="plStatus"></span></div>
+      </div>
+
+      <h2>⏱ 共有タイマー(全チームに表示)</h2>
+      <div class="row">
+        <div style="flex:0;min-width:120px"><label>分</label><input type="text" id="timerMin" value="60"></div>
+        <div><label>ラベル(任意)</label><input type="text" id="timerLabel" placeholder="開発タイム 残り"></div>
+        <div style="flex:0;min-width:auto"><button onclick="setTimer()">開始</button></div>
+        <div style="flex:0;min-width:auto"><button class="secondary" onclick="clearTimer()">クリア</button></div>
+        <div style="flex:0;min-width:auto"><span class="timerchip" id="timerNow" style="display:none"></span></div>
+      </div>
+
+      <h2>🎤 発表モード</h2>
+      <p class="sub">チームがランダム順で発表します。発表中のチームのカメラ/画面が全ルームに配信され、時間切れで自動的に次のチームへ移ります。</p>
+      <div class="row">
+        <div style="flex:0;min-width:140px"><label>1チームの持ち時間(分)</label><input type="text" id="presMin" value="5"></div>
+        <div style="flex:0;min-width:auto"><button onclick="presStart()">🎬 発表モード開始</button></div>
+        <div style="flex:0;min-width:auto"><button class="secondary" onclick="presNext()">⏭ 次のチームへ</button></div>
+        <div style="flex:0;min-width:auto"><button class="danger" onclick="presStop()">終了</button></div>
+      </div>
+      <p id="presStatus" class="sub" style="margin-top:10px"></p>
+
+      <h2>🗳 作品と投票</h2>
+      <div class="row" style="align-items:center">
+        <div style="flex:0;min-width:auto"><label style="margin:0"><input type="checkbox" id="anonChk"> 作者(チーム名)を匿名にする</label></div>
+        <div style="flex:0;min-width:auto"><label style="margin:0"><input type="checkbox" id="voteChk"> 投票を受け付ける</label></div>
+      </div>
+      <table style="margin-top:12px">
+        <thead><tr><th>順位</th><th>作品</th><th>チーム</th><th>得票</th></tr></thead>
+        <tbody id="workList"></tbody>
+      </table>
+
+      <h2>🏆 結果発表(3位 → 2位 → 1位)</h2>
+      <p class="sub">ボタンを押すたびに、全参加者の画面でドラムロールと共に1ランクずつ発表されます。</p>
+      <div class="row">
+        <div style="flex:0;min-width:auto"><button onclick="revealNext()">🥁 次の順位を発表する</button></div>
+        <div style="flex:0;min-width:auto"><button class="secondary" onclick="revealReset()">リセット</button></div>
+        <div style="flex:0;min-width:auto"><span class="sub" id="revealStatus"></span></div>
+      </div>
+    </div>
+
+    <!-- ============ ルーム ============ -->
+    <div class="tabpane" id="pane-rooms">
+      <h2>フリールームを作成 <span style="font-weight:normal;color:var(--muted);font-size:.8rem">(チームルームは名簿コンソールのチーム作成で自動生成されます)</span></h2>
+      <div class="row">
+        <div><label>ルーム名</label><input type="text" id="roomTitle" placeholder="雑談ルーム"></div>
+        <div><label>説明(任意)</label><input type="text" id="roomDesc"></div>
         <div style="flex:0;min-width:auto;white-space:nowrap">
           <label><input type="checkbox" id="roomAutoRec" checked> 自動録画</label>
         </div>
@@ -34,17 +92,17 @@
       </div>
       <h2>ルーム一覧</h2>
       <table>
-        <thead><tr><th>ルーム</th><th>参加者</th><th>録画</th><th>操作</th></tr></thead>
+        <thead><tr><th>ルーム</th><th>種別</th><th>参加者</th><th>録画</th><th>操作</th></tr></thead>
         <tbody id="roomList"></tbody>
       </table>
     </div>
 
-    <!-- 録画 -->
+    <!-- ============ 録画 ============ -->
     <div class="tabpane" id="pane-recordings">
       <h2>録画一覧</h2>
-      <p class="sub">「自動録画」がONのルームは、最初の参加者が入室すると自動的に録画が始まり、全員が退出すると保存されます。</p>
+      <p class="sub">チームルームは入室で自動録画。作品プレイの録画もここに並びます。</p>
       <table>
-        <thead><tr><th>ルーム</th><th>ファイル</th><th>状態</th><th>開始</th><th>サイズ</th><th></th></tr></thead>
+        <thead><tr><th>ルーム</th><th>状態</th><th>開始</th><th>サイズ</th><th></th></tr></thead>
         <tbody id="recList"></tbody>
       </table>
     </div>
@@ -58,23 +116,9 @@
       msg.textContent = text;
       setTimeout(() => msg.className = 'msg', 4000);
     }
-    async function api(path, opts = {}) {
-      const res = await fetch(path, opts);
-      if (res.status === 401) { location.href = '/'; throw new Error('unauthorized'); }
-      if (res.status === 403) { location.href = '/lobby.html'; throw new Error('forbidden'); }
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) { flash(data.detail || 'エラーが発生しました', false); throw new Error(data.detail); }
-      return data;
-    }
-    async function post(path, body) {
-      return api(path, {method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: body ? JSON.stringify(body) : undefined});
-    }
-    async function logout() { await fetch('/api/logout', {method: 'POST'}); location.href = '/'; }
-    const esc = s => { const d = document.createElement('span'); d.textContent = s ?? ''; return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;'); };
-    const fmtTime = t => t ? new Date(t * 1000).toLocaleString('ja-JP') : '';
+    async function call(fn) { try { return await fn(); } catch (e) { flash(e.detail || 'エラー', false); throw e; } }
+    const fmtTime = t => t ? new Date(t * 1000).toLocaleString('ja-JP', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'}) : '—';
 
-    // タブ切替
     document.querySelectorAll('.tabs button[data-tab]').forEach(b => b.onclick = () => {
       document.querySelectorAll('.tabs button[data-tab]').forEach(x => x.classList.remove('active'));
       document.querySelectorAll('.tabpane').forEach(x => x.classList.remove('active'));
@@ -82,42 +126,143 @@
       document.getElementById('pane-' + b.dataset.tab).classList.add('active');
     });
 
+    let state = null;
+
+    // --- 進行 ---
+    async function announce() {
+      const text = document.getElementById('announceText').value.trim();
+      if (!text) return flash('メッセージを入力してください', false);
+      await call(() => jpost('/api/admin/announce', {text}));
+      document.getElementById('announceText').value = '';
+      flash('全ルームに通知しました');
+    }
+    async function setPlacement(mode) {
+      await call(() => jpost('/api/admin/placement', {mode}));
+      flash(mode === 'hall' ? '全員を全体会場へ召集しました' : mode === 'teams' ? '全員をチームルームへ送り出しました' : '自由行動に戻しました');
+      loadState();
+    }
+    async function setTimer() {
+      const min = parseFloat(document.getElementById('timerMin').value);
+      if (!min || min <= 0) return flash('分数を入力してください', false);
+      await call(() => jpost('/api/admin/timer', {seconds: Math.round(min * 60), label: document.getElementById('timerLabel').value.trim()}));
+      flash('タイマーを開始しました'); loadState();
+    }
+    async function clearTimer() {
+      await call(() => api('/api/admin/timer', {method: 'DELETE'}));
+      flash('タイマーをクリアしました'); loadState();
+    }
+    async function presStart() {
+      const min = parseFloat(document.getElementById('presMin').value);
+      if (!min || min <= 0) return flash('持ち時間を入力してください', false);
+      if (!confirm(`発表モードを開始しますか?各チーム ${min} 分、ランダム順です。`)) return;
+      await call(() => jpost('/api/admin/presentation/start', {seconds: Math.round(min * 60)}));
+      flash('発表モードを開始しました'); loadState();
+    }
+    async function presNext() { await call(() => jpost('/api/admin/presentation/next')); loadState(); }
+    async function presStop() { await call(() => jpost('/api/admin/presentation/stop')); flash('発表モードを終了しました'); loadState(); }
+
+    document.getElementById('anonChk').onchange = (e) => call(() => jpost('/api/admin/works-settings', {anonymous: e.target.checked})).then(() => flash('作者表示を更新しました'));
+    document.getElementById('voteChk').onchange = (e) => call(() => jpost('/api/admin/works-settings', {voting_open: e.target.checked})).then(() => flash(e.target.checked ? '投票を開始しました(全ルームに通知済み)' : '投票を締め切りました'));
+
+    async function revealNext() {
+      try {
+        const r = await jpost('/api/admin/reveal/next');
+        flash(`第${r.rank}位を発表しました🥁`);
+      } catch (e) { flash(e.detail || 'エラー', false); }
+      loadState(); loadWorks();
+    }
+    async function revealReset() { await call(() => jpost('/api/admin/reveal/reset')); flash('結果発表をリセットしました'); loadState(); }
+
+    async function loadState() {
+      state = await api('/api/state');
+      document.getElementById('hackName').textContent = '— ' + state.hackathon.name;
+      // 配置
+      const pl = state.placement;
+      document.getElementById('plStatus').textContent =
+        pl === 'hall' ? '現在: 全体会場へ召集中' : pl === 'teams' ? '現在: チームルームへ送出中' : '現在: 自由行動';
+      // 作品設定
+      if (document.activeElement?.type !== 'checkbox') {
+        document.getElementById('anonChk').checked = state.hackathon.works_anonymous;
+        document.getElementById('voteChk').checked = state.hackathon.voting_open;
+      }
+      // 発表
+      const ps = document.getElementById('presStatus');
+      if (state.presentation) {
+        const p = state.presentation;
+        const remain = p.end_at - Math.floor(Date.now() / 1000);
+        ps.innerHTML = `発表中: <b>${esc(p.current_team_name || '?')}</b> (${p.index + 1}/${p.order.length}) 残り ${fmtCountdown(remain)}<br>順番: ` +
+          p.order.map((t, i) => (i === p.index ? `<b>${esc(t.name)}</b>` : esc(t.name))).join(' → ');
+      } else ps.textContent = '発表モードは停止中です。';
+      // 結果
+      const rv = state.reveal;
+      document.getElementById('revealStatus').textContent =
+        rv.total === 0 && rv.stage === 0 ? '' :
+        rv.stage === 0 ? '未発表' :
+        rv.stage >= rv.total ? '全順位発表済み' : `${rv.items.map(i => `第${i.rank}位`).join('・')} まで発表済み`;
+      renderTimerNow();
+    }
+    function renderTimerNow() {
+      const chip = document.getElementById('timerNow');
+      if (state && state.timer) {
+        const remain = state.timer.end_at - Math.floor(Date.now() / 1000);
+        if (remain > 0) {
+          chip.style.display = '';
+          chip.textContent = '⏱ ' + (state.timer.label ? state.timer.label + ' ' : '') + fmtCountdown(remain);
+          return;
+        }
+      }
+      chip.style.display = 'none';
+    }
+    setInterval(() => { renderTimerNow(); if (state?.presentation) loadState(); }, 1000);
+
+    async function loadWorks() {
+      const works = await api('/api/admin/works');
+      document.getElementById('workList').innerHTML = works.map((w, i) => `
+        <tr>
+          <td>${i + 1}</td>
+          <td><b>${esc(w.title)}</b><br><span style="color:var(--muted);font-size:.78rem">${esc(w.url)}</span></td>
+          <td>${esc(w.team_name || '?')}</td>
+          <td>${w.votes}票</td>
+        </tr>`).join('') || '<tr><td colspan="4" style="color:var(--muted)">まだ作品がありません</td></tr>';
+    }
+
     // --- ルーム ---
+    const kindLabel = {hall: '全体会場', team: 'チーム', free: 'フリー', play: 'プレイ'};
     async function loadRooms() {
       const rooms = await api('/api/rooms');
       document.getElementById('roomList').innerHTML = rooms.map(r => `
         <tr>
           <td><b>${esc(r.title)}</b><br><span style="color:var(--muted);font-size:.8rem">${esc(r.name)}</span></td>
+          <td>${kindLabel[r.kind] || r.kind}</td>
           <td>${r.participants}人 ${r.participants > 0 ? '<span class="badge live">LIVE</span>' : ''}</td>
           <td>${r.recording ? '<span class="badge rec">REC</span>' : (r.auto_record ? '<span style="color:var(--muted);font-size:.8rem">自動</span>' : '<span style="color:var(--muted);font-size:.8rem">手動</span>')}</td>
           <td style="white-space:nowrap">
             ${r.recording
               ? `<button class="small danger" onclick="recStop('${r.name}')">録画停止</button>`
               : `<button class="small" onclick="recStart('${r.name}')">録画開始</button>`}
-            <button class="small secondary" onclick="delRoom('${r.name}', '${esc(r.title)}')">削除</button>
+            ${r.kind === 'free' ? `<button class="small secondary" onclick="delRoom('${r.name}', '${esc(r.title)}')">削除</button>` : ''}
           </td>
         </tr>`).join('');
     }
     async function createRoom() {
       const title = document.getElementById('roomTitle').value.trim();
       if (!title) return flash('ルーム名を入力してください', false);
-      await post('/api/admin/rooms', {
+      await call(() => jpost('/api/admin/rooms', {
         title,
         description: document.getElementById('roomDesc').value.trim(),
         auto_record: document.getElementById('roomAutoRec').checked,
-      });
+      }));
       document.getElementById('roomTitle').value = '';
       document.getElementById('roomDesc').value = '';
-      flash('ルームを作成しました');
-      loadRooms();
+      flash('ルームを作成しました'); loadRooms();
     }
     async function delRoom(name, title) {
       if (!confirm(`ルーム「${title}」を削除しますか?`)) return;
-      await api(`/api/admin/rooms/${encodeURIComponent(name)}`, {method: 'DELETE'});
+      await call(() => api(`/api/admin/rooms/${encodeURIComponent(name)}`, {method: 'DELETE'}));
       flash('削除しました'); loadRooms();
     }
-    async function recStart(name) { await post(`/api/admin/rooms/${encodeURIComponent(name)}/record/start`); flash('録画を開始しました'); loadRooms(); loadRecordings(); }
-    async function recStop(name) { await post(`/api/admin/rooms/${encodeURIComponent(name)}/record/stop`); flash('録画を停止しました'); loadRooms(); loadRecordings(); }
+    async function recStart(name) { await call(() => jpost(`/api/admin/rooms/${encodeURIComponent(name)}/record/start`)); flash('録画を開始しました'); loadRooms(); loadRecordings(); }
+    async function recStop(name) { await call(() => jpost(`/api/admin/rooms/${encodeURIComponent(name)}/record/stop`)); flash('録画を停止しました'); loadRooms(); loadRecordings(); }
 
     // --- 録画 ---
     const statusLabel = {recording: '<span class="badge rec">録画中</span>', done: '完了', failed: '<span style="color:var(--danger)">失敗</span>'};
@@ -125,8 +270,7 @@
       const recs = await api('/api/admin/recordings');
       document.getElementById('recList').innerHTML = recs.map(r => `
         <tr>
-          <td>${esc(r.room_name)}</td>
-          <td style="font-size:.8rem">${esc(r.filename)}</td>
+          <td><b>${esc(r.room_title || r.room_name)}</b><br><span style="color:var(--muted);font-size:.75rem">${esc(r.filename)}</span></td>
           <td>${statusLabel[r.status] || esc(r.status)}</td>
           <td style="font-size:.8rem">${fmtTime(r.started_at)}</td>
           <td>${r.size_mb != null ? r.size_mb + ' MB' : '—'}</td>
@@ -134,7 +278,7 @@
         </tr>`).join('');
     }
 
-    function loadAll() { loadRooms(); loadRecordings(); }
+    function loadAll() { loadState(); loadWorks(); loadRooms(); loadRecordings(); }
     loadAll();
     setInterval(loadAll, 10000);
   </script>

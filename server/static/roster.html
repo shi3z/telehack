@@ -5,21 +5,41 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Telehack — 名簿コンソール</title>
   <link rel="stylesheet" href="/style.css">
+  <script src="/common.js"></script>
 </head>
 <body>
   <div class="topbar">
     <div class="brand"><span class="logo">◆</span> 参加者名簿コンソール</div>
     <div class="right">
-      <a href="/admin.html">ルーム/録画管理</a>
+      <a href="/admin.html">進行/ルーム/録画</a>
       <a href="/lobby.html">ロビー</a>
       <button class="secondary small" onclick="logout()">ログアウト</button>
     </div>
   </div>
-  <div class="container" style="max-width:1100px">
+  <div class="container" style="max-width:1150px">
+
+    <!-- ハッカソン -->
+    <div class="toolbar">
+      <b>🏟 ハッカソン:</b>
+      <select id="hackSel" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)"></select>
+      <button class="secondary small" onclick="activateHack()">切り替え</button>
+      <span style="flex:1"></span>
+      <input type="text" id="newHackName" placeholder="新しいハッカソン名" style="min-width:180px;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
+      <button onclick="createHack()">新規作成して開始</button>
+    </div>
+
+    <!-- チーム -->
+    <div class="toolbar" style="flex-wrap:wrap">
+      <b>👥 チーム:</b>
+      <span id="teamChips" style="display:flex;gap:8px;flex-wrap:wrap;flex:1"></span>
+      <input type="text" id="newTeamName" placeholder="新チーム名" style="min-width:140px;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
+      <button onclick="createTeam()">チーム追加</button>
+    </div>
+    <p class="sub" style="margin:-6px 0 14px">チームを追加すると専用ブレイクアウトルーム(自動録画ON)が自動作成されます。チーム名の × で削除。</p>
 
     <div class="stats">
       <div class="stat"><div class="num" id="stTotal">–</div><div class="lbl">総参加者</div></div>
-      <div class="stat"><div class="num" id="stAdmin">–</div><div class="lbl">管理者</div></div>
+      <div class="stat"><div class="num" id="stTeams">–</div><div class="lbl">チーム数</div></div>
       <div class="stat"><div class="num" id="stLogged">–</div><div class="lbl">ログイン済み</div></div>
       <div class="stat accent"><div class="num" id="stOnline">–</div><div class="lbl">在室中</div></div>
     </div>
@@ -31,10 +51,12 @@
       <input type="file" id="csvFile" accept=".csv,text/csv" style="display:none">
       <a href="/api/admin/participants/export.csv"><button class="secondary">CSVエクスポート</button></a>
     </div>
+    <p class="sub" style="margin:-6px 0 14px">CSV形式: email,name,team,admin(チームは自動作成されます)</p>
 
     <div class="toolbar" id="addForm" style="display:none">
       <input type="email" id="aEmail" placeholder="メールアドレス" style="flex:1;min-width:200px;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
-      <input type="text" id="aName" placeholder="名前" style="flex:1;min-width:140px;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
+      <input type="text" id="aName" placeholder="名前" style="flex:1;min-width:120px;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
+      <select id="aTeam" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)"></select>
       <label style="margin:0;white-space:nowrap"><input type="checkbox" id="aAdmin"> 管理者</label>
       <button onclick="addParticipant()">登録</button>
       <button class="secondary" onclick="hideAdd()">キャンセル</button>
@@ -53,6 +75,7 @@
           <th style="width:36px"><input type="checkbox" id="selAll"></th>
           <th>メールアドレス</th>
           <th>名前</th>
+          <th>チーム</th>
           <th style="width:70px">権限</th>
           <th>最終ログイン</th>
           <th>状態</th>
@@ -67,34 +90,77 @@
 
   <script>
     const msg = document.getElementById('msg');
-    let all = [];                      // サーバーから取得した名簿
-    const selected = new Set();        // 選択中メールアドレス
-    let editing = false;               // インライン編集中は自動更新を止める
+    let all = [], teams = [], hackathons = [];
+    const selected = new Set();
+    let editing = false;
 
     function flash(text, ok = true) {
       msg.className = ok ? 'msg ok' : 'msg err';
       msg.textContent = text;
       setTimeout(() => msg.className = 'msg', 5000);
     }
-    async function api(path, opts = {}) {
-      const res = await fetch(path, opts);
-      if (res.status === 401) { location.href = '/'; throw new Error('unauthorized'); }
-      if (res.status === 403) { location.href = '/lobby.html'; throw new Error('forbidden'); }
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) { flash(data.detail || 'エラーが発生しました', false); throw new Error(data.detail); }
-      return data;
-    }
-    const jpost = (path, body) => api(path, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
-    const jpatch = (path, body) => api(path, {method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
-    async function logout() { await fetch('/api/logout', {method: 'POST'}); location.href = '/'; }
-    const esc = s => { const d = document.createElement('span'); d.textContent = s ?? ''; return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;'); };
+    async function call(fn) { try { return await fn(); } catch (e) { flash(e.detail || 'エラー', false); throw e; } }
     const fmtTime = t => t ? new Date(t * 1000).toLocaleString('ja-JP', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'}) : '—';
 
+    // --- ハッカソン ---
+    async function loadHackathons() {
+      hackathons = await api('/api/admin/hackathons');
+      const sel = document.getElementById('hackSel');
+      sel.innerHTML = hackathons.map(h =>
+        `<option value="${h.id}" ${h.active ? 'selected' : ''}>${esc(h.name)} (${h.participants}名/${h.teams}チーム)${h.active ? ' ★' : ''}</option>`).join('');
+    }
+    async function createHack() {
+      const name = document.getElementById('newHackName').value.trim();
+      if (!name) return flash('ハッカソン名を入力してください', false);
+      if (!confirm(`新しいハッカソン「${name}」を作成してアクティブにしますか?\n名簿とチームは新規に作り直しになります(過去のデータは保存されます)。`)) return;
+      await call(() => jpost('/api/admin/hackathons', {name}));
+      document.getElementById('newHackName').value = '';
+      flash('作成してアクティブにしました'); loadAll();
+    }
+    async function activateHack() {
+      const id = document.getElementById('hackSel').value;
+      const h = hackathons.find(x => x.id == id);
+      if (h && h.active) return flash('すでにアクティブです');
+      if (!confirm(`「${h ? h.name : id}」に切り替えますか?ログイン可能な名簿・チーム・ルームがすべて切り替わります。`)) return;
+      await call(() => jpost(`/api/admin/hackathons/${id}/activate`));
+      flash('切り替えました'); loadAll();
+    }
+
+    // --- チーム ---
+    async function loadTeams() {
+      teams = await api('/api/admin/teams');
+      document.getElementById('teamChips').innerHTML = teams.map(t =>
+        `<span class="badge live" style="font-size:.85rem;padding:5px 10px">${esc(t.name)} (${t.members})
+           <a style="cursor:pointer;margin-left:4px" onclick="delTeam(${t.id}, '${esc(t.name)}')">×</a></span>`).join('') ||
+        '<span style="color:var(--muted)">まだチームがありません</span>';
+      const opts = '<option value="">(チームなし)</option>' + teams.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
+      document.getElementById('aTeam').innerHTML = opts;
+    }
+    async function createTeam() {
+      const name = document.getElementById('newTeamName').value.trim();
+      if (!name) return flash('チーム名を入力してください', false);
+      await call(() => jpost('/api/admin/teams', {name}));
+      document.getElementById('newTeamName').value = '';
+      flash('チームと専用ルームを作成しました'); loadTeams(); load();
+    }
+    async function delTeam(id, name) {
+      if (!confirm(`チーム「${name}」を削除しますか?専用ルームと作品も削除され、メンバーは未所属になります。`)) return;
+      await call(() => api(`/api/admin/teams/${id}`, {method: 'DELETE'}));
+      flash('削除しました'); loadTeams(); load();
+    }
+
+    // --- 名簿 ---
     function statusHtml(p) {
       if (p.online_room) return `<span class="dot on"></span>在室: ${esc(p.online_room)}`;
-      if (p.logged_in)  return `<span class="dot session"></span>ログイン中`;
+      if (p.logged_in) return `<span class="dot session"></span>ログイン中`;
       if (p.last_login_at) return `<span class="dot off"></span>離席`;
       return `<span class="dot off"></span>未ログイン`;
+    }
+    function teamSelect(p) {
+      return `<select class="teamsel" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:.85rem">
+        <option value="">(なし)</option>` +
+        teams.map(t => `<option value="${t.id}" ${p.team_id === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('') +
+      `</select>`;
     }
 
     function render() {
@@ -105,6 +171,7 @@
           <td><input type="checkbox" class="sel" ${selected.has(p.email) ? 'checked' : ''}></td>
           <td>${esc(p.email)}</td>
           <td><span class="editable" title="クリックで編集">${esc(p.name) || '<span style="color:var(--muted)">(未設定)</span>'}</span></td>
+          <td>${teamSelect(p)}</td>
           <td><input type="checkbox" class="adm" ${p.is_admin ? 'checked' : ''}></td>
           <td style="font-size:.85rem">${fmtTime(p.last_login_at)}</td>
           <td style="font-size:.85rem">${statusHtml(p)}</td>
@@ -113,16 +180,12 @@
             <button class="small secondary" onclick="delOne('${esc(p.email)}')">削除</button>
           </td>
         </tr>`).join('');
-      document.getElementById('hint').textContent =
-        q ? `${rows.length} / ${all.length} 件を表示` : `${all.length} 件`;
-      updateStats();
-      updateBulkbar();
-      bindRowEvents();
+      document.getElementById('hint').textContent = q ? `${rows.length} / ${all.length} 件を表示` : `${all.length} 件`;
+      updateStats(); updateBulkbar(); bindRowEvents();
     }
-
     function updateStats() {
       document.getElementById('stTotal').textContent = all.length;
-      document.getElementById('stAdmin').textContent = all.filter(p => p.is_admin).length;
+      document.getElementById('stTeams').textContent = teams.length;
       document.getElementById('stLogged').textContent = all.filter(p => p.logged_in).length;
       document.getElementById('stOnline').textContent = all.filter(p => p.online_room).length;
     }
@@ -130,7 +193,6 @@
       document.getElementById('selCount').textContent = selected.size;
       document.getElementById('bulkbar').classList.toggle('show', selected.size > 0);
     }
-
     function bindRowEvents() {
       document.querySelectorAll('#list tr').forEach(tr => {
         const email = tr.dataset.email;
@@ -141,13 +203,18 @@
         };
         tr.querySelector('.adm').onchange = async (e) => {
           try { await jpatch(`/api/admin/participants/${encodeURIComponent(email)}`, {is_admin: e.target.checked}); flash('権限を更新しました'); }
-          catch { e.target.checked = !e.target.checked; }
+          catch (err) { flash(err.detail || 'エラー', false); e.target.checked = !e.target.checked; }
           load();
+        };
+        tr.querySelector('.teamsel').onchange = async (e) => {
+          const v = e.target.value;
+          await call(() => jpatch(`/api/admin/participants/${encodeURIComponent(email)}`,
+            v ? {team_id: parseInt(v)} : {clear_team: true}));
+          flash('チームを更新しました'); load(); loadTeams();
         };
         tr.querySelector('.editable').onclick = () => startEdit(tr, email);
       });
     }
-
     function startEdit(tr, email) {
       if (editing) return;
       editing = true;
@@ -168,41 +235,42 @@
       input.onblur = () => finish(true);
     }
 
-    // --- 操作 ---
     function showAdd() { document.getElementById('addForm').style.display = 'flex'; document.getElementById('aEmail').focus(); }
     function hideAdd() { document.getElementById('addForm').style.display = 'none'; }
     async function addParticipant() {
       const email = document.getElementById('aEmail').value.trim();
       if (!email) return flash('メールアドレスを入力してください', false);
-      await jpost('/api/admin/participants', {
+      const teamVal = document.getElementById('aTeam').value;
+      await call(() => jpost('/api/admin/participants', {
         email,
         name: document.getElementById('aName').value.trim(),
         is_admin: document.getElementById('aAdmin').checked,
-      });
+        team_id: teamVal ? parseInt(teamVal) : null,
+      }));
       document.getElementById('aEmail').value = '';
       document.getElementById('aName').value = '';
       document.getElementById('aAdmin').checked = false;
-      flash('追加しました'); load();
+      flash('追加しました'); load(); loadTeams();
     }
     async function sendLink(email) {
-      const res = await jpost('/api/admin/participants/send-links', {emails: [email]});
+      const res = await call(() => jpost('/api/admin/participants/send-links', {emails: [email]}));
       res.sent ? flash(`${email} にログインリンクを送信しました`) : flash('送信に失敗しました', false);
     }
     async function delOne(email) {
       if (!confirm(`${email} を名簿から削除しますか?`)) return;
-      await api(`/api/admin/participants/${encodeURIComponent(email)}`, {method: 'DELETE'});
+      await call(() => api(`/api/admin/participants/${encodeURIComponent(email)}`, {method: 'DELETE'}));
       selected.delete(email);
       flash('削除しました'); load();
     }
     async function bulkSendLinks() {
       if (!confirm(`選択した ${selected.size} 名にログインリンクを送信しますか?`)) return;
-      const res = await jpost('/api/admin/participants/send-links', {emails: [...selected]});
+      const res = await call(() => jpost('/api/admin/participants/send-links', {emails: [...selected]}));
       flash(`${res.sent}件送信しました` + (res.failed.length ? ` / 失敗: ${res.failed.join(', ')}` : ''), res.failed.length === 0);
       clearSelection();
     }
     async function bulkDelete() {
       if (!confirm(`選択した ${selected.size} 名を名簿から削除しますか?この操作は取り消せません。`)) return;
-      const res = await jpost('/api/admin/participants/bulk-delete', {emails: [...selected]});
+      const res = await call(() => jpost('/api/admin/participants/bulk-delete', {emails: [...selected]}));
       flash(`${res.deleted}件削除しました`);
       clearSelection(); load();
     }
@@ -221,10 +289,10 @@
       if (!f) return;
       const fd = new FormData();
       fd.append('file', f);
-      const res = await api('/api/admin/participants/csv', {method: 'POST', body: fd});
+      const res = await call(() => api('/api/admin/participants/csv', {method: 'POST', body: fd}));
       flash(`CSVから${res.imported}件を登録しました`);
       e.target.value = '';
-      load();
+      load(); loadTeams();
     };
 
     async function load() {
@@ -232,8 +300,9 @@
       all = await api('/api/admin/participants');
       render();
     }
-    load();
-    setInterval(load, 15000);
+    async function loadAll() { await loadHackathons(); await loadTeams(); await load(); }
+    loadAll();
+    setInterval(() => { if (!editing) { loadTeams(); load(); } }, 15000);
   </script>
 </body>
 </html>
