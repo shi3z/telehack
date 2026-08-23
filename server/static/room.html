@@ -144,12 +144,34 @@
       })
       .on(RoomEvent.DataReceived, (payload) => onData(payload))
       .on(RoomEvent.RecordingStatusChanged, updateRec)
-      .on(RoomEvent.Disconnected, () => { if (!unloading) location.href = '/lobby.html'; });
+      .on(RoomEvent.Disconnected, () => {
+        // 別タブで同じルームに入る等でキックされた場合、ロビー側の自動移動を
+        // 一時停止させてページ間の無限ループを防ぐ (stay=1)
+        if (!unloading) location.href = '/lobby.html?stay=1';
+      });
 
     // ページ離脱(別ページへの遷移)中は Disconnected でのリダイレクトをしない
     let unloading = false;
     window.addEventListener('beforeunload', () => { unloading = true; });
     window.addEventListener('pagehide', () => { unloading = true; });
+
+    // ブラウザの自動再生ブロック対策: 音声が再生できない時はワンタップで解除
+    function updateAudioUnlock() {
+      const blocked = room.state === 'connected' && !room.canPlaybackAudio;
+      let el = document.getElementById('audioUnlock');
+      if (!blocked) { el?.remove(); return; }
+      if (el) return;
+      el = document.createElement('button');
+      el.id = 'audioUnlock';
+      el.textContent = '🔊 タップして音声をオンにする';
+      el.onclick = async () => {
+        try { await room.startAudio(); } catch {}
+        try { await stageRoom.startAudio(); } catch {}
+        el.remove();
+      };
+      document.body.appendChild(el);
+    }
+    room.on(RoomEvent.AudioPlaybackStatusChanged, updateAudioUnlock);
 
     // --- ステージ受信 (主催者配信 / 発表の視聴) ---
     const stageRoom = new Room({ adaptiveStream: true });
@@ -287,12 +309,24 @@
       await room.connect(ws_url, token);
       statusEl.textContent = '接続済み';
       updateRec();
+      updateAudioUnlock();
       connectStage();
       refreshState();
-      try {
-        await room.localParticipant.enableCameraAndMicrophone();
-      } catch (e) {
-        statusEl.textContent = 'カメラ/マイクが使用できません(視聴のみ)';
+      // 運営(管理者)は明示的にボタンを押すまでカメラ/マイクを配信しない
+      let isAdmin = false;
+      try { isAdmin = !!(await (await fetch('/api/me')).json()).is_admin; } catch {}
+      if (isAdmin) {
+        micOn = false; camOn = false;
+        const mb = document.getElementById('micBtn'), cb = document.getElementById('camBtn');
+        mb.textContent = '🎤 ミュート解除'; mb.classList.add('off');
+        cb.textContent = '📷 カメラON'; cb.classList.add('off');
+        statusEl.textContent = '👁 運営モード: カメラ/マイクOFFで入室中(ボタンで開始)';
+      } else {
+        try {
+          await room.localParticipant.enableCameraAndMicrophone();
+        } catch (e) {
+          statusEl.textContent = 'カメラ/マイクが使用できません(視聴のみ)';
+        }
       }
     }
 

@@ -46,8 +46,15 @@
       if (me.is_admin) document.getElementById('adminLink').style.display = '';
       document.getElementById('myTeam').textContent =
         me.team_name ? `あなたのチーム: ${me.team_name}` : 'チーム未割り当て(運営にお問い合わせください)';
-      // 配置指示に従って自動移動 (管理者は対象外)
-      if (!me.is_admin) {
+      // 配置指示に従って自動移動 (管理者は対象外。stay=1 で来た直後は30秒停止)
+      const stayUntil = sessionStorage.getItem('stayUntil');
+      if (new URLSearchParams(location.search).get('stay') === '1' && !stayUntil) {
+        sessionStorage.setItem('stayUntil', Date.now() + 30000);
+        history.replaceState(null, '', '/lobby.html');
+      }
+      const staying = Number(sessionStorage.getItem('stayUntil') || 0) > Date.now();
+      if (!me.is_admin && !staying) {
+        sessionStorage.removeItem('stayUntil');
         if (state.placement === 'hall') { location.href = `/room.html?room=${state.hall_room}`; return; }
         if (state.placement === 'teams' && me.team_room) { location.href = `/room.html?room=${me.team_room}`; return; }
       }

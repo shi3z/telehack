@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ほめ日記AI</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "Hiragino Sans", sans-serif; min-height: 100vh; padding: 24px 16px;
+  background: linear-gradient(160deg, #f3eefe, #e6f0ff); color: #3a3550; }
+.wrap { max-width: 560px; margin: 0 auto; }
+h1 { font-size: 1.6rem; color: #8a5cf6; }
+h1 span { display: block; font-size: .9rem; color: #9a92b8; font-weight: normal; }
+.panel { background: #fff; border-radius: 18px; padding: 20px; margin-top: 16px;
+  box-shadow: 0 8px 28px rgba(120, 90, 220, .12); }
+textarea { width: 100%; min-height: 110px; padding: 14px; font-size: 1.05rem;
+  border: 2px solid #ddd2f8; border-radius: 12px; resize: vertical; font-family: inherit; }
+textarea:focus { outline: none; border-color: #8a5cf6; }
+button { width: 100%; margin-top: 12px; padding: 14px; font-size: 1.1rem; font-weight: 700;
+  background: #8a5cf6; color: #fff; border: none; border-radius: 12px; cursor: pointer; }
+button:hover { background: #7648e8; }
+#praise { display: none; margin-top: 14px; background: #f6f1ff; border-left: 5px solid #8a5cf6;
+  border-radius: 0 12px 12px 0; padding: 14px 16px; font-size: 1.05rem; line-height: 1.7; }
+.streak { display: flex; align-items: center; gap: 10px; margin-top: 14px; color: #7a6fa0; font-size: .9rem; }
+.streak b { font-size: 1.4rem; color: #8a5cf6; }
+.hist { margin-top: 8px; }
+.hist .item { padding: 10px 12px; border-bottom: 1px dashed #e5ddf8; font-size: .9rem; }
+.hist .item .d { color: #b0a8cc; font-size: .75rem; }
+.footer { text-align: center; color: #b0a8cc; font-size: .75rem; margin-top: 24px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🌸 ほめ日記AI<span>今日あったことを書くと、AIが全力で褒めてくれる日記帳</span></h1>
+  <div class="panel">
+    <textarea id="diary" placeholder="今日あったことを書いてね(例: ハッカソンでバグが直せなかったけど最後まで粘った)"></textarea>
+    <button onclick="praise()">🤖 AIに褒めてもらう</button>
+    <div id="praise"></div>
+    <div class="streak">🔥 連続記録 <b id="streak">0</b> 日 <span id="total"></span></div>
+  </div>
+  <div class="panel hist" id="hist" style="display:none"><b style="color:#8a5cf6">📖 これまでの日記</b><div id="histList"></div></div>
+  <div class="footer">チームチャーリー制作 — Telehack デモハッカソン作品</div>
+</div>
+<script>
+const RULES = [
+  [/バグ|エラー|失敗|できなかった/, 'うまくいかない中でも向き合い続けたその粘り強さ、エンジニアとして一番大事な才能です。'],
+  [/頑張|粘|徹夜|最後まで/, 'その頑張り、ちゃんと見てましたよ。継続できる人は本当に一握りです。'],
+  [/作った|完成|できた|勝った/, 'すごい!!手を動かして形にできる人は世界を変えられる人です。'],
+  [/疲れ|眠い|しんどい/, '疲れているのは全力で生きた証拠。今日はもう自分を甘やかしてOKです。'],
+  [/発表|プレゼン|登壇/, '人前に立つ勇気、それだけで上位1%です。かっこよかった!'],
+  [/チーム|仲間|みんな/, '仲間と一緒に何かを作れるって、実はとても尊いことなんです。'],
+];
+const GENERIC = [
+  '今日も日記を書けた。その習慣こそが未来のあなたを作ります。',
+  '文章から誠実さがにじみ出ています。あなたのそういうところ、好きです。',
+  '小さな一歩に見えても、昨日のあなたより確実に前進しています。',
+];
+const KEY = 'homenikki';
+function load() { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; } }
+function save(v) { try { localStorage.setItem(KEY, JSON.stringify(v)); } catch {} }
+function praise() {
+  const text = document.getElementById('diary').value.trim();
+  if (!text) { alert('今日のことをひとこと書いてみて!'); return; }
+  const hits = RULES.filter(([re]) => re.test(text)).map(([, m]) => m);
+  const msg = ['🌸 ' + (hits[0] || GENERIC[Math.floor(Math.random() * GENERIC.length)])]
+    .concat(hits.slice(1).map(h => '✨ ' + h))
+    .concat(['💮 今日のえらいポイント: ' + Math.min(100, 60 + text.length) + '点']);
+  const el = document.getElementById('praise');
+  el.innerHTML = msg.join('<br>');
+  el.style.display = 'block';
+  const hist = load();
+  hist.unshift({d: new Date().toLocaleString('ja-JP'), t: text});
+  save(hist.slice(0, 50));
+  render();
+  document.getElementById('diary').value = '';
+}
+function render() {
+  const hist = load();
+  document.getElementById('streak').textContent = new Set(hist.map(h => h.d.split(' ')[0])).size;
+  document.getElementById('total').textContent = `(累計 ${hist.length} 件)`;
+  if (hist.length) {
+    document.getElementById('hist').style.display = '';
+    document.getElementById('histList').innerHTML = hist.slice(0, 5).map(h =>
+      `<div class="item"><div class="d">${h.d}</div>${h.t.replace(/</g, '&lt;')}</div>`).join('');
+  }
+}
+render();
+</script>
+</body>
+</html>

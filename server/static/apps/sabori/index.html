@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>サボり検知くん</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "Hiragino Sans", sans-serif; background: #0d1220; color: #e8ecf8;
+  min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+.wrap { max-width: 460px; width: 100%; text-align: center; }
+h1 { font-size: 1.5rem; color: #5ad0ff; }
+h1 span { display: block; font-size: .85rem; color: #7a86a8; font-weight: normal; margin-top: 4px; }
+.ring { width: 220px; height: 220px; border-radius: 50%; margin: 26px auto;
+  display: flex; align-items: center; justify-content: center; flex-direction: column;
+  border: 8px solid #1d2a45; transition: border-color .3s; }
+.ring.focus { border-color: #38d87a; box-shadow: 0 0 40px rgba(56, 216, 122, .3); }
+.ring.slack { border-color: #ff5470; box-shadow: 0 0 40px rgba(255, 84, 112, .4); animation: pulse .6s infinite; }
+@keyframes pulse { 50% { transform: scale(1.03); } }
+#time { font-size: 2.6rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+#stateLabel { font-size: .95rem; color: #7a86a8; }
+#msg { min-height: 3.2em; font-size: 1.05rem; margin: 6px 0 14px; color: #ffd76a; }
+button { padding: 14px 34px; font-size: 1.1rem; font-weight: 700; border: none;
+  border-radius: 12px; cursor: pointer; background: #38d87a; color: #06251a; }
+button.stop { background: #ff5470; color: #fff; }
+.stats { display: flex; gap: 10px; margin-top: 22px; }
+.stat { flex: 1; background: #16203a; border-radius: 12px; padding: 12px; }
+.stat b { font-size: 1.5rem; display: block; }
+.stat span { font-size: .75rem; color: #7a86a8; }
+.footer { color: #46527a; font-size: .75rem; margin-top: 22px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>👁 サボり検知くん<span>タブを離れた瞬間、AIがあなたのサボりを検知して煽ります</span></h1>
+  <div class="ring" id="ring">
+    <div id="time">00:00</div>
+    <div id="stateLabel">待機中</div>
+  </div>
+  <div id="msg">「集中開始」を押して作業をはじめよう</div>
+  <button id="btn" onclick="toggle()">▶ 集中開始</button>
+  <div class="stats">
+    <div class="stat"><b id="focusMin">0<small>分</small></b><span>今日の集中時間</span></div>
+    <div class="stat"><b id="slackCnt">0<small>回</small></b><span>サボり検知回数</span></div>
+    <div class="stat"><b id="score">100</b><span>集中スコア</span></div>
+  </div>
+  <div class="footer">チームブラボー制作 — Telehack デモハッカソン作品</div>
+</div>
+<script>
+let running = false, sec = 0, slacks = 0, timer = null;
+const SHAME = [
+  '👁 見ましたよ。今、別のタブ見ましたよね?',
+  '🚨 サボり検知!SNSは作品が完成してからにしましょう',
+  '😇 AIは全部記録しています。戻ってきて偉い!',
+  '📉 集中スコアが下がりました。深呼吸してもう一回',
+  '🔥 締切は待ってくれません!さあ画面に戻って!',
+];
+const PRAISE = [
+  '🌟 いい集中!その調子!',
+  '🧠 フロー状態に入っています',
+  '💪 5分継続!小さな勝利の積み重ね',
+];
+function fmt(s) { return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); }
+function render() {
+  document.getElementById('time').textContent = fmt(sec);
+  document.getElementById('focusMin').innerHTML = Math.floor(sec / 60) + '<small>分</small>';
+  document.getElementById('slackCnt').innerHTML = slacks + '<small>回</small>';
+  document.getElementById('score').textContent = Math.max(0, 100 - slacks * 12 + Math.floor(sec / 60) * 2);
+}
+function toggle() {
+  running = !running;
+  const btn = document.getElementById('btn'), ring = document.getElementById('ring');
+  if (running) {
+    btn.textContent = '⏸ 休憩する'; btn.className = 'stop';
+    ring.className = 'ring focus';
+    document.getElementById('stateLabel').textContent = '🟢 集中モード';
+    document.getElementById('msg').textContent = '作業に集中!このタブを離れたら…わかってますね?';
+    timer = setInterval(() => {
+      sec++; render();
+      if (sec % 300 === 0) document.getElementById('msg').textContent = PRAISE[Math.floor(Math.random() * PRAISE.length)];
+    }, 1000);
+  } else {
+    btn.textContent = '▶ 集中開始'; btn.className = '';
+    ring.className = 'ring';
+    document.getElementById('stateLabel').textContent = '休憩中';
+    document.getElementById('msg').textContent = 'えらい!ちゃんと「休憩」を宣言してから休むのが一流です';
+    clearInterval(timer);
+  }
+}
+document.addEventListener('visibilitychange', () => {
+  if (running && document.hidden) slack();
+});
+window.addEventListener('blur', () => { if (running) slack(); });
+function slack() {
+  slacks++;
+  const ring = document.getElementById('ring');
+  ring.className = 'ring slack';
+  document.getElementById('stateLabel').textContent = '🔴 サボり検知!';
+  document.getElementById('msg').textContent = SHAME[Math.min(slacks - 1, SHAME.length - 1)];
+  render();
+  setTimeout(() => { if (running) { ring.className = 'ring focus'; document.getElementById('stateLabel').textContent = '🟢 集中モード'; } }, 4000);
+}
+render();
+</script>
+</body>
+</html>

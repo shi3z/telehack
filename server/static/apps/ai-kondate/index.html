@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI献立ハッカー</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "Hiragino Sans", sans-serif; background: linear-gradient(160deg, #fff8ef, #ffeeda);
+  min-height: 100vh; color: #4a3520; padding: 24px 16px; }
+.wrap { max-width: 640px; margin: 0 auto; }
+h1 { font-size: 1.6rem; color: #e07020; }
+h1 span { font-size: 1rem; color: #a08560; display: block; font-weight: normal; }
+.panel { background: #fff; border-radius: 16px; padding: 20px; margin-top: 16px;
+  box-shadow: 0 6px 24px rgba(180, 120, 40, .12); }
+label { font-weight: 700; font-size: .9rem; }
+input { width: 100%; padding: 12px 14px; font-size: 1.05rem; border: 2px solid #f0c898;
+  border-radius: 10px; margin-top: 8px; }
+input:focus { outline: none; border-color: #e07020; }
+button { width: 100%; margin-top: 12px; padding: 14px; font-size: 1.1rem; font-weight: 700;
+  background: #e07020; color: #fff; border: none; border-radius: 10px; cursor: pointer; }
+button:hover { background: #c96018; }
+.day { margin-top: 14px; border-left: 5px solid #f0a850; padding: 10px 14px; background: #fff7ec;
+  border-radius: 0 10px 10px 0; }
+.day h3 { color: #e07020; font-size: 1rem; }
+.day .dish { font-size: 1.15rem; font-weight: 700; margin: 4px 0; }
+.day .why { font-size: .85rem; color: #a08560; }
+.chips { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { background: #ffe6c8; color: #b06010; padding: 4px 12px; border-radius: 999px; font-size: .85rem; cursor: pointer; }
+#result { display: none; }
+.footer { text-align: center; color: #c0a480; font-size: .75rem; margin-top: 24px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🍳 AI献立ハッカー<span>冷蔵庫の余り物から3日分の献立を瞬時にハック</span></h1>
+  <div class="panel">
+    <label>いま冷蔵庫にある食材(カンマ区切り)</label>
+    <input id="ing" placeholder="例: 卵, キャベツ, 豚肉, 豆腐">
+    <div class="chips">
+      <span class="chip" onclick="add('卵')">+卵</span><span class="chip" onclick="add('キャベツ')">+キャベツ</span>
+      <span class="chip" onclick="add('豚肉')">+豚肉</span><span class="chip" onclick="add('豆腐')">+豆腐</span>
+      <span class="chip" onclick="add('トマト')">+トマト</span><span class="chip" onclick="add('じゃがいも')">+じゃがいも</span>
+    </div>
+    <button id="go" onclick="hack()">🤖 AIに献立をハックさせる</button>
+  </div>
+  <div class="panel" id="result">
+    <h3 style="color:#e07020">📅 あなたの3日分献立</h3>
+    <div id="days"></div>
+    <div class="day" style="border-color:#7ab86a;background:#f2f9ee">
+      <h3 style="color:#4a8a3a">🛒 買い足しリスト</h3>
+      <div id="shopping" style="font-size:.95rem"></div>
+    </div>
+  </div>
+  <div class="footer">チームアルファ制作 — Telehack デモハッカソン作品</div>
+</div>
+<script>
+const RECIPES = [
+  {name: 'ふわとろオムレツ', needs: ['卵'], extra: ['牛乳'], why: 'タンパク質が今週不足気味です'},
+  {name: '回鍋肉風キャベツ炒め', needs: ['キャベツ', '豚肉'], extra: ['味噌'], why: '野菜と肉のバランスが最適'},
+  {name: '麻婆豆腐', needs: ['豆腐'], extra: ['豆板醤', 'ねぎ'], why: '代謝を上げる発酵調味料つき'},
+  {name: 'トマトと卵の中華炒め', needs: ['トマト', '卵'], extra: [], why: 'リコピンで疲労回復'},
+  {name: '肉じゃが', needs: ['じゃがいも', '豚肉'], extra: ['にんじん', '玉ねぎ'], why: '作り置きで平日をハック'},
+  {name: 'とん平焼き', needs: ['キャベツ', '卵', '豚肉'], extra: ['ソース'], why: '余り物消化率98%'},
+  {name: '湯豆腐', needs: ['豆腐'], extra: ['昆布'], why: '深夜でも罪悪感ゼロ'},
+  {name: 'ジャーマンポテト', needs: ['じゃがいも'], extra: ['ベーコン'], why: '5分で完成する時短メニュー'},
+  {name: '野菜炒め定食', needs: ['キャベツ'], extra: ['もやし'], why: '食物繊維をブースト'},
+];
+function add(x) {
+  const el = document.getElementById('ing');
+  el.value = el.value ? el.value.replace(/[,、]\s*$/, '') + ', ' + x : x;
+}
+function hack() {
+  const ings = document.getElementById('ing').value.split(/[,、]/).map(s => s.trim()).filter(Boolean);
+  if (!ings.length) { alert('食材を入れてください!'); return; }
+  const scored = RECIPES.map(r => ({...r, hit: r.needs.filter(n => ings.includes(n)).length}))
+    .filter(r => r.hit > 0).sort((a, b) => b.hit - a.hit || Math.random() - .5);
+  const pick = scored.slice(0, 3);
+  while (pick.length < 3) pick.push(RECIPES[Math.floor(Math.random() * RECIPES.length)]);
+  document.getElementById('days').innerHTML = pick.map((r, i) => `
+    <div class="day"><h3>Day ${i + 1}</h3><div class="dish">${r.name}</div>
+    <div class="why">🤖 ${r.why}(手持ち食材 ${r.hit || 0} 品使用)</div></div>`).join('');
+  const buy = [...new Set(pick.flatMap(r => [...r.needs.filter(n => !ings.includes(n)), ...r.extra]))];
+  document.getElementById('shopping').textContent = buy.length ? buy.join('、') : '買い足し不要!全部あります 🎉';
+  document.getElementById('result').style.display = 'block';
+  document.getElementById('go').textContent = '🔁 別の献立をハックする';
+}
+</script>
+</body>
+</html>
