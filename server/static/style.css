@@ -138,6 +138,13 @@ th { color: var(--muted); font-weight: 600; font-size: .8rem; }
 .work-card .wurl { color: var(--muted); font-size: .78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .work-card .wactions { display: flex; gap: 8px; margin-top: 4px; }
 .work-card.voted { border-color: var(--accent2); box-shadow: 0 0 0 1px var(--accent2); }
+/* --- 録画プレイヤー --- */
+#playerOverlay {
+  position: fixed; inset: 0; z-index: 3500; background: rgba(5,6,15,.92);
+  display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px;
+}
+#playerOverlay video { max-width: 92vw; max-height: 80vh; border-radius: 12px; background: #000; }
+#playerOverlay .ptitle { color: var(--text); font-weight: 700; }
 /* --- 名簿コンソール --- */
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 16px 0; }
 .stat {

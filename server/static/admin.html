@@ -275,9 +275,28 @@
           <td>${statusLabel[r.status] || esc(r.status)}</td>
           <td style="font-size:.8rem">${fmtTime(r.started_at)}</td>
           <td>${r.size_mb != null ? r.size_mb + ' MB' : '—'}</td>
-          <td>${r.size_mb != null && r.download_url ? `<a href="${r.download_url}"><button class="small">⬇ ダウンロード</button></a>` : '<span style="color:var(--muted);font-size:.8rem">ファイル待ち</span>'}</td>
+          <td style="white-space:nowrap">${r.size_mb != null && r.download_url
+            ? `<button class="small" onclick="playRec('${r.download_url}', '${esc(r.room_title || r.room_name)}')">▶ 再生</button>
+               <a href="${r.download_url}"><button class="small secondary">⬇ 保存</button></a>`
+            : '<span style="color:var(--muted);font-size:.8rem">ファイル待ち</span>'}</td>
         </tr>`).join('');
     }
+
+    // --- 録画のブラウザ内再生 ---
+    function playRec(url, title) {
+      const ov = document.createElement('div');
+      ov.id = 'playerOverlay';
+      ov.innerHTML = `
+        <div class="ptitle"></div>
+        <video controls autoplay playsinline></video>
+        <button class="secondary" onclick="closePlayer()">閉じる (Esc)</button>`;
+      ov.querySelector('.ptitle').textContent = '🎬 ' + title;
+      ov.querySelector('video').src = url + '&inline=1';
+      ov.onclick = (e) => { if (e.target === ov) closePlayer(); };
+      document.body.appendChild(ov);
+    }
+    function closePlayer() { document.getElementById('playerOverlay')?.remove(); }
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePlayer(); });
 
     function loadAll() { loadState(); loadWorks(); loadRooms(); loadRecordings(); }
     loadAll();

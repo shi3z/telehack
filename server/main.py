@@ -985,7 +985,8 @@ async def admin_list_recordings(user: dict = Depends(require_admin)):
 
 
 @app.get("/api/admin/recordings/{filename}/download")
-async def admin_download_recording(filename: str, request: Request, t: str = ""):
+async def admin_download_recording(filename: str, request: Request, t: str = "", inline: int = 0):
+    """署名付きURLで録画を取得。inline=1 ならブラウザ内再生用(シーク可能)"""
     if "/" in filename or ".." in filename:
         raise HTTPException(400, "不正なファイル名です")
     authorized = False
@@ -1000,7 +1001,11 @@ async def admin_download_recording(filename: str, request: Request, t: str = "")
     path = config.RECORDINGS_DIR / filename
     if not path.exists():
         raise HTTPException(404, "ファイルが見つかりません(録画終了直後は数秒かかることがあります)")
-    return FileResponse(path, media_type="video/mp4", filename=filename)
+    # FileResponse は Range リクエスト対応なので動画のシークも効く
+    return FileResponse(
+        path, media_type="video/mp4", filename=filename,
+        content_disposition_type="inline" if inline else "attachment",
+    )
 
 
 # ---------------------------------------------------------------- LiveKit Webhook
