@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Telehack — 名簿コンソール</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand"><span class="logo">◆</span> 参加者名簿コンソール</div>
+    <div class="right">
+      <a href="/admin.html">ルーム/録画管理</a>
+      <a href="/lobby.html">ロビー</a>
+      <button class="secondary small" onclick="logout()">ログアウト</button>
+    </div>
+  </div>
+  <div class="container" style="max-width:1100px">
+
+    <div class="stats">
+      <div class="stat"><div class="num" id="stTotal">–</div><div class="lbl">総参加者</div></div>
+      <div class="stat"><div class="num" id="stAdmin">–</div><div class="lbl">管理者</div></div>
+      <div class="stat"><div class="num" id="stLogged">–</div><div class="lbl">ログイン済み</div></div>
+      <div class="stat accent"><div class="num" id="stOnline">–</div><div class="lbl">在室中</div></div>
+    </div>
+
+    <div class="toolbar">
+      <input type="search" id="search" placeholder="🔍 メールアドレス・名前で検索">
+      <button onclick="showAdd()">＋ 追加</button>
+      <button class="secondary" onclick="document.getElementById('csvFile').click()">CSV読み込み</button>
+      <input type="file" id="csvFile" accept=".csv,text/csv" style="display:none">
+      <a href="/api/admin/participants/export.csv"><button class="secondary">CSVエクスポート</button></a>
+    </div>
+
+    <div class="toolbar" id="addForm" style="display:none">
+      <input type="email" id="aEmail" placeholder="メールアドレス" style="flex:1;min-width:200px;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
+      <input type="text" id="aName" placeholder="名前" style="flex:1;min-width:140px;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
+      <label style="margin:0;white-space:nowrap"><input type="checkbox" id="aAdmin"> 管理者</label>
+      <button onclick="addParticipant()">登録</button>
+      <button class="secondary" onclick="hideAdd()">キャンセル</button>
+    </div>
+
+    <div class="bulkbar" id="bulkbar">
+      <b><span id="selCount">0</span>件選択中</b>
+      <button class="small" onclick="bulkSendLinks()">ログインリンクを送信</button>
+      <button class="small danger" onclick="bulkDelete()">名簿から削除</button>
+      <button class="small secondary" onclick="clearSelection()">選択解除</button>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:36px"><input type="checkbox" id="selAll"></th>
+          <th>メールアドレス</th>
+          <th>名前</th>
+          <th style="width:70px">権限</th>
+          <th>最終ログイン</th>
+          <th>状態</th>
+          <th style="width:180px">操作</th>
+        </tr>
+      </thead>
+      <tbody id="list"></tbody>
+    </table>
+    <p class="sub" id="hint" style="margin-top:10px"></p>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <script>
+    const msg = document.getElementById('msg');
+    let all = [];                      // サーバーから取得した名簿
+    const selected = new Set();        // 選択中メールアドレス
+    let editing = false;               // インライン編集中は自動更新を止める
+
+    function flash(text, ok = true) {
+      msg.className = ok ? 'msg ok' : 'msg err';
+      msg.textContent = text;
+      setTimeout(() => msg.className = 'msg', 5000);
+    }
+    async function api(path, opts = {}) {
+      const res = await fetch(path, opts);
+      if (res.status === 401) { location.href = '/'; throw new Error('unauthorized'); }
+      if (res.status === 403) { location.href = '/lobby.html'; throw new Error('forbidden'); }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { flash(data.detail || 'エラーが発生しました', false); throw new Error(data.detail); }
+      return data;
+    }
+    const jpost = (path, body) => api(path, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+    const jpatch = (path, body) => api(path, {method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+    async function logout() { await fetch('/api/logout', {method: 'POST'}); location.href = '/'; }
+    const esc = s => { const d = document.createElement('span'); d.textContent = s ?? ''; return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;'); };
+    const fmtTime = t => t ? new Date(t * 1000).toLocaleString('ja-JP', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'}) : '—';
+
+    function statusHtml(p) {
+      if (p.online_room) return `<span class="dot on"></span>在室: ${esc(p.online_room)}`;
+      if (p.logged_in)  return `<span class="dot session"></span>ログイン中`;
+      if (p.last_login_at) return `<span class="dot off"></span>離席`;
+      return `<span class="dot off"></span>未ログイン`;
+    }
+
+    function render() {
+      const q = document.getElementById('search').value.trim().toLowerCase();
+      const rows = all.filter(p => !q || p.email.includes(q) || (p.name || '').toLowerCase().includes(q));
+      document.getElementById('list').innerHTML = rows.map(p => `
+        <tr class="${selected.has(p.email) ? 'selected' : ''}" data-email="${esc(p.email)}">
+          <td><input type="checkbox" class="sel" ${selected.has(p.email) ? 'checked' : ''}></td>
+          <td>${esc(p.email)}</td>
+          <td><span class="editable" title="クリックで編集">${esc(p.name) || '<span style="color:var(--muted)">(未設定)</span>'}</span></td>
+          <td><input type="checkbox" class="adm" ${p.is_admin ? 'checked' : ''}></td>
+          <td style="font-size:.85rem">${fmtTime(p.last_login_at)}</td>
+          <td style="font-size:.85rem">${statusHtml(p)}</td>
+          <td style="white-space:nowrap">
+            <button class="small" onclick="sendLink('${esc(p.email)}')">リンク送信</button>
+            <button class="small secondary" onclick="delOne('${esc(p.email)}')">削除</button>
+          </td>
+        </tr>`).join('');
+      document.getElementById('hint').textContent =
+        q ? `${rows.length} / ${all.length} 件を表示` : `${all.length} 件`;
+      updateStats();
+      updateBulkbar();
+      bindRowEvents();
+    }
+
+    function updateStats() {
+      document.getElementById('stTotal').textContent = all.length;
+      document.getElementById('stAdmin').textContent = all.filter(p => p.is_admin).length;
+      document.getElementById('stLogged').textContent = all.filter(p => p.logged_in).length;
+      document.getElementById('stOnline').textContent = all.filter(p => p.online_room).length;
+    }
+    function updateBulkbar() {
+      document.getElementById('selCount').textContent = selected.size;
+      document.getElementById('bulkbar').classList.toggle('show', selected.size > 0);
+    }
+
+    function bindRowEvents() {
+      document.querySelectorAll('#list tr').forEach(tr => {
+        const email = tr.dataset.email;
+        tr.querySelector('.sel').onchange = (e) => {
+          e.target.checked ? selected.add(email) : selected.delete(email);
+          tr.classList.toggle('selected', e.target.checked);
+          updateBulkbar();
+        };
+        tr.querySelector('.adm').onchange = async (e) => {
+          try { await jpatch(`/api/admin/participants/${encodeURIComponent(email)}`, {is_admin: e.target.checked}); flash('権限を更新しました'); }
+          catch { e.target.checked = !e.target.checked; }
+          load();
+        };
+        tr.querySelector('.editable').onclick = () => startEdit(tr, email);
+      });
+    }
+
+    function startEdit(tr, email) {
+      if (editing) return;
+      editing = true;
+      const cell = tr.querySelector('.editable').parentElement;
+      const current = (all.find(p => p.email === email) || {}).name || '';
+      cell.innerHTML = `<input class="inline-edit" type="text" value="${esc(current)}">`;
+      const input = cell.querySelector('input');
+      input.focus(); input.select();
+      const finish = async (save) => {
+        editing = false;
+        if (save && input.value.trim() !== current) {
+          await jpatch(`/api/admin/participants/${encodeURIComponent(email)}`, {name: input.value.trim()});
+          flash('名前を更新しました');
+        }
+        load();
+      };
+      input.onkeydown = (e) => { if (e.key === 'Enter') finish(true); if (e.key === 'Escape') finish(false); };
+      input.onblur = () => finish(true);
+    }
+
+    // --- 操作 ---
+    function showAdd() { document.getElementById('addForm').style.display = 'flex'; document.getElementById('aEmail').focus(); }
+    function hideAdd() { document.getElementById('addForm').style.display = 'none'; }
+    async function addParticipant() {
+      const email = document.getElementById('aEmail').value.trim();
+      if (!email) return flash('メールアドレスを入力してください', false);
+      await jpost('/api/admin/participants', {
+        email,
+        name: document.getElementById('aName').value.trim(),
+        is_admin: document.getElementById('aAdmin').checked,
+      });
+      document.getElementById('aEmail').value = '';
+      document.getElementById('aName').value = '';
+      document.getElementById('aAdmin').checked = false;
+      flash('追加しました'); load();
+    }
+    async function sendLink(email) {
+      const res = await jpost('/api/admin/participants/send-links', {emails: [email]});
+      res.sent ? flash(`${email} にログインリンクを送信しました`) : flash('送信に失敗しました', false);
+    }
+    async function delOne(email) {
+      if (!confirm(`${email} を名簿から削除しますか?`)) return;
+      await api(`/api/admin/participants/${encodeURIComponent(email)}`, {method: 'DELETE'});
+      selected.delete(email);
+      flash('削除しました'); load();
+    }
+    async function bulkSendLinks() {
+      if (!confirm(`選択した ${selected.size} 名にログインリンクを送信しますか?`)) return;
+      const res = await jpost('/api/admin/participants/send-links', {emails: [...selected]});
+      flash(`${res.sent}件送信しました` + (res.failed.length ? ` / 失敗: ${res.failed.join(', ')}` : ''), res.failed.length === 0);
+      clearSelection();
+    }
+    async function bulkDelete() {
+      if (!confirm(`選択した ${selected.size} 名を名簿から削除しますか?この操作は取り消せません。`)) return;
+      const res = await jpost('/api/admin/participants/bulk-delete', {emails: [...selected]});
+      flash(`${res.deleted}件削除しました`);
+      clearSelection(); load();
+    }
+    function clearSelection() { selected.clear(); render(); }
+
+    document.getElementById('selAll').onchange = (e) => {
+      const q = document.getElementById('search').value.trim().toLowerCase();
+      const visible = all.filter(p => !q || p.email.includes(q) || (p.name || '').toLowerCase().includes(q));
+      if (e.target.checked) visible.forEach(p => selected.add(p.email));
+      else visible.forEach(p => selected.delete(p.email));
+      render();
+    };
+    document.getElementById('search').oninput = () => render();
+    document.getElementById('csvFile').onchange = async (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      const fd = new FormData();
+      fd.append('file', f);
+      const res = await api('/api/admin/participants/csv', {method: 'POST', body: fd});
+      flash(`CSVから${res.imported}件を登録しました`);
+      e.target.value = '';
+      load();
+    };
+
+    async function load() {
+      if (editing) return;
+      all = await api('/api/admin/participants');
+      render();
+    }
+    load();
+    setInterval(load, 15000);
+  </script>
+</body>
+</html>

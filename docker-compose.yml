@@ -1,0 +1,56 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks: [lknet]
+
+  livekit:
+    image: livekit/livekit-server:v1.9
+    restart: unless-stopped
+    command: --config /etc/livekit.yaml
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+    ports:
+      - "7880:7880"          # WebSocket / HTTP API
+      - "7881:7881"          # WebRTC over TCP (fallback)
+      - "50000-50199:50000-50199/udp"  # WebRTC media
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on: [redis]
+    networks: [lknet]
+
+  egress:
+    image: livekit/egress:v1.9
+    restart: unless-stopped
+    environment:
+      - EGRESS_CONFIG_FILE=/etc/egress.yaml
+    volumes:
+      - ./livekit/egress.yaml:/etc/egress.yaml:ro
+      - ./recordings:/out
+    cap_add:
+      - SYS_ADMIN            # required for Chrome sandbox inside the container
+    depends_on: [livekit, redis]
+    networks: [lknet]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"        # HTTP/3
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on: [livekit]
+    networks: [lknet]
+
+networks:
+  lknet:
+
+volumes:
+  caddy_data:
+  caddy_config:

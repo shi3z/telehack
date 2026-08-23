@@ -1,0 +1,18 @@
+# Secrets & local config (use the *.example templates)
+.env
+livekit/livekit.yaml
+livekit/egress.yaml
+caddy/Caddyfile
+
+# Runtime data
+data/
+recordings/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Misc
+nohup.out
+*.log

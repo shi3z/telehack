@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Telehack — ロビー</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand"><span class="logo">◆</span> Telehack</div>
+    <div class="right">
+      <span id="userName"></span>
+      <a id="adminLink" href="/admin.html" style="display:none">管理画面</a>
+      <button class="secondary small" onclick="logout()">ログアウト</button>
+    </div>
+  </div>
+  <div class="container">
+    <h1>ルーム一覧</h1>
+    <p class="sub">参加したいルームを選んでください。<span class="badge rec">REC</span> 表示中のルームは録画されています。</p>
+    <div class="room-grid" id="rooms"></div>
+    <p class="sub" id="empty" style="display:none; margin-top:24px">まだルームがありません。運営がルームを作成するとここに表示されます。</p>
+  </div>
+  <script>
+    async function api(path, opts) {
+      const res = await fetch(path, opts);
+      if (res.status === 401) { location.href = '/'; throw new Error('unauthorized'); }
+      return res.json();
+    }
+    async function logout() { await fetch('/api/logout', {method: 'POST'}); location.href = '/'; }
+
+    async function load() {
+      const me = await api('/api/me');
+      document.getElementById('userName').textContent = me.name || me.email;
+      if (me.is_admin) document.getElementById('adminLink').style.display = '';
+      const rooms = await api('/api/rooms');
+      const grid = document.getElementById('rooms');
+      grid.innerHTML = '';
+      document.getElementById('empty').style.display = rooms.length ? 'none' : '';
+      for (const r of rooms) {
+        const card = document.createElement('div');
+        card.className = 'room-card';
+        card.innerHTML = `
+          <div class="title"></div>
+          <div class="desc"></div>
+          <div class="meta">
+            <span>👥 ${r.participants}人</span>
+            ${r.participants > 0 ? '<span class="badge live">LIVE</span>' : ''}
+            ${r.recording ? '<span class="badge rec">REC</span>' : ''}
+          </div>
+          <button>入室する</button>`;
+        card.querySelector('.title').textContent = r.title;
+        card.querySelector('.desc').textContent = r.description || '';
+        card.querySelector('button').onclick = () => location.href = `/room.html?room=${encodeURIComponent(r.name)}`;
+        grid.appendChild(card);
+      }
+    }
+    load();
+    setInterval(load, 10000);
+  </script>
+</body>
+</html>

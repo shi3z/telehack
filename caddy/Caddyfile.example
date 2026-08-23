@@ -1,0 +1,12 @@
+{
+	email you@example.com
+}
+
+# Your domain (a real domain, or <dashed-ip>.sslip.io if you only have an IP)
+your-domain.example.com {
+	# LiveKit signaling (WebSocket) — the client SDK connects to /rtc
+	reverse_proxy /rtc* livekit:7880
+
+	# Everything else goes to the app (FastAPI)
+	reverse_proxy host.docker.internal:8800
+}

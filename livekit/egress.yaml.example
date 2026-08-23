@@ -1,0 +1,8 @@
+redis:
+  address: redis:6379
+api_key: CHANGE_ME_KEY
+api_secret: CHANGE_ME_SECRET
+ws_url: ws://livekit:7880
+insecure: true
+logging:
+  level: info

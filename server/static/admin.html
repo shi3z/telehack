@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Telehack — 管理画面</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand"><span class="logo">◆</span> Telehack 管理画面</div>
+    <div class="right">
+      <a href="/lobby.html">ロビーへ</a>
+      <button class="secondary small" onclick="logout()">ログアウト</button>
+    </div>
+  </div>
+  <div class="container">
+    <div class="tabs">
+      <button class="active" data-tab="rooms">ルーム</button>
+      <button data-tab="recordings">録画</button>
+      <a href="/roster.html"><button type="button">参加者名簿 ↗</button></a>
+    </div>
+
+    <!-- ルーム -->
+    <div class="tabpane active" id="pane-rooms">
+      <h2>新しいルームを作成</h2>
+      <div class="row">
+        <div><label>ルーム名</label><input type="text" id="roomTitle" placeholder="チームA ブレイクアウト"></div>
+        <div><label>説明(任意)</label><input type="text" id="roomDesc" placeholder="チームAの作業部屋"></div>
+        <div style="flex:0;min-width:auto;white-space:nowrap">
+          <label><input type="checkbox" id="roomAutoRec" checked> 自動録画</label>
+        </div>
+        <div style="flex:0;min-width:auto"><button onclick="createRoom()">作成</button></div>
+      </div>
+      <h2>ルーム一覧</h2>
+      <table>
+        <thead><tr><th>ルーム</th><th>参加者</th><th>録画</th><th>操作</th></tr></thead>
+        <tbody id="roomList"></tbody>
+      </table>
+    </div>
+
+    <!-- 録画 -->
+    <div class="tabpane" id="pane-recordings">
+      <h2>録画一覧</h2>
+      <p class="sub">「自動録画」がONのルームは、最初の参加者が入室すると自動的に録画が始まり、全員が退出すると保存されます。</p>
+      <table>
+        <thead><tr><th>ルーム</th><th>ファイル</th><th>状態</th><th>開始</th><th>サイズ</th><th></th></tr></thead>
+        <tbody id="recList"></tbody>
+      </table>
+    </div>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <script>
+    const msg = document.getElementById('msg');
+    function flash(text, ok = true) {
+      msg.className = ok ? 'msg ok' : 'msg err';
+      msg.textContent = text;
+      setTimeout(() => msg.className = 'msg', 4000);
+    }
+    async function api(path, opts = {}) {
+      const res = await fetch(path, opts);
+      if (res.status === 401) { location.href = '/'; throw new Error('unauthorized'); }
+      if (res.status === 403) { location.href = '/lobby.html'; throw new Error('forbidden'); }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { flash(data.detail || 'エラーが発生しました', false); throw new Error(data.detail); }
+      return data;
+    }
+    async function post(path, body) {
+      return api(path, {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: body ? JSON.stringify(body) : undefined});
+    }
+    async function logout() { await fetch('/api/logout', {method: 'POST'}); location.href = '/'; }
+    const esc = s => { const d = document.createElement('span'); d.textContent = s ?? ''; return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;'); };
+    const fmtTime = t => t ? new Date(t * 1000).toLocaleString('ja-JP') : '';
+
+    // タブ切替
+    document.querySelectorAll('.tabs button[data-tab]').forEach(b => b.onclick = () => {
+      document.querySelectorAll('.tabs button[data-tab]').forEach(x => x.classList.remove('active'));
+      document.querySelectorAll('.tabpane').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      document.getElementById('pane-' + b.dataset.tab).classList.add('active');
+    });
+
+    // --- ルーム ---
+    async function loadRooms() {
+      const rooms = await api('/api/rooms');
+      document.getElementById('roomList').innerHTML = rooms.map(r => `
+        <tr>
+          <td><b>${esc(r.title)}</b><br><span style="color:var(--muted);font-size:.8rem">${esc(r.name)}</span></td>
+          <td>${r.participants}人 ${r.participants > 0 ? '<span class="badge live">LIVE</span>' : ''}</td>
+          <td>${r.recording ? '<span class="badge rec">REC</span>' : (r.auto_record ? '<span style="color:var(--muted);font-size:.8rem">自動</span>' : '<span style="color:var(--muted);font-size:.8rem">手動</span>')}</td>
+          <td style="white-space:nowrap">
+            ${r.recording
+              ? `<button class="small danger" onclick="recStop('${r.name}')">録画停止</button>`
+              : `<button class="small" onclick="recStart('${r.name}')">録画開始</button>`}
+            <button class="small secondary" onclick="delRoom('${r.name}', '${esc(r.title)}')">削除</button>
+          </td>
+        </tr>`).join('');
+    }
+    async function createRoom() {
+      const title = document.getElementById('roomTitle').value.trim();
+      if (!title) return flash('ルーム名を入力してください', false);
+      await post('/api/admin/rooms', {
+        title,
+        description: document.getElementById('roomDesc').value.trim(),
+        auto_record: document.getElementById('roomAutoRec').checked,
+      });
+      document.getElementById('roomTitle').value = '';
+      document.getElementById('roomDesc').value = '';
+      flash('ルームを作成しました');
+      loadRooms();
+    }
+    async function delRoom(name, title) {
+      if (!confirm(`ルーム「${title}」を削除しますか?`)) return;
+      await api(`/api/admin/rooms/${encodeURIComponent(name)}`, {method: 'DELETE'});
+      flash('削除しました'); loadRooms();
+    }
+    async function recStart(name) { await post(`/api/admin/rooms/${encodeURIComponent(name)}/record/start`); flash('録画を開始しました'); loadRooms(); loadRecordings(); }
+    async function recStop(name) { await post(`/api/admin/rooms/${encodeURIComponent(name)}/record/stop`); flash('録画を停止しました'); loadRooms(); loadRecordings(); }
+
+    // --- 録画 ---
+    const statusLabel = {recording: '<span class="badge rec">録画中</span>', done: '完了', failed: '<span style="color:var(--danger)">失敗</span>'};
+    async function loadRecordings() {
+      const recs = await api('/api/admin/recordings');
+      document.getElementById('recList').innerHTML = recs.map(r => `
+        <tr>
+          <td>${esc(r.room_name)}</td>
+          <td style="font-size:.8rem">${esc(r.filename)}</td>
+          <td>${statusLabel[r.status] || esc(r.status)}</td>
+          <td style="font-size:.8rem">${fmtTime(r.started_at)}</td>
+          <td>${r.size_mb != null ? r.size_mb + ' MB' : '—'}</td>
+          <td>${r.size_mb != null && r.download_url ? `<a href="${r.download_url}"><button class="small">⬇ ダウンロード</button></a>` : '<span style="color:var(--muted);font-size:.8rem">ファイル待ち</span>'}</td>
+        </tr>`).join('');
+    }
+
+    function loadAll() { loadRooms(); loadRecordings(); }
+    loadAll();
+    setInterval(loadAll, 10000);
+  </script>
+</body>
+</html>

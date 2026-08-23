@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Telehack — 会議室</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/livekit-client.umd.min.js"></script>
+</head>
+<body>
+  <div class="roombar">
+    <div class="brand"><span class="logo">◆</span> <span id="roomTitle">会議室</span></div>
+    <div class="right" style="display:flex;gap:10px;align-items:center">
+      <span class="badge rec" id="recBadge" style="display:none">REC 録画中</span>
+      <span id="status" style="color:var(--muted);font-size:.85rem">接続中…</span>
+    </div>
+  </div>
+  <div class="videos" id="videos"></div>
+  <div class="controls">
+    <button id="micBtn">🎤 ミュート</button>
+    <button id="camBtn">📷 カメラOFF</button>
+    <button id="shareBtn" class="secondary">🖥 画面共有</button>
+    <button id="leaveBtn" class="danger">退出</button>
+  </div>
+  <script>
+    const { Room, RoomEvent, Track } = LivekitClient;
+    const params = new URLSearchParams(location.search);
+    const roomName = params.get('room');
+    if (!roomName) location.href = '/lobby.html';
+
+    const videosEl = document.getElementById('videos');
+    const statusEl = document.getElementById('status');
+    const tiles = new Map();   // key -> {el, videoEl, nameEl}
+
+    // --- クリックで拡大(フォーカス表示) ---
+    let focusedKey = null;
+    function applyFocus() {
+      if (focusedKey && !tiles.has(focusedKey)) focusedKey = null;
+      videosEl.classList.toggle('focus-mode', !!focusedKey);
+      for (const [k, t] of tiles) t.el.classList.toggle('focused', k === focusedKey);
+    }
+    function toggleFocus(key) {
+      focusedKey = (focusedKey === key) ? null : key;
+      applyFocus();
+    }
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && focusedKey) { focusedKey = null; applyFocus(); }
+    });
+
+    function ensureTile(key, label) {
+      if (tiles.has(key)) return tiles.get(key);
+      const el = document.createElement('div');
+      el.className = 'tile';
+      el.dataset.key = key;
+      el.title = 'クリックで拡大 / もう一度クリックで戻る';
+      el.onclick = () => toggleFocus(key);
+      const video = document.createElement('video');
+      video.autoplay = true; video.playsInline = true;
+      const name = document.createElement('div');
+      name.className = 'name';
+      name.textContent = label;
+      el.appendChild(video); el.appendChild(name);
+      videosEl.appendChild(el);
+      const t = {el, videoEl: video, nameEl: name};
+      tiles.set(key, t);
+      applyFocus();
+      return t;
+    }
+    function removeTile(key) {
+      const t = tiles.get(key);
+      if (t) { t.el.remove(); tiles.delete(key); }
+      if (key === focusedKey) { focusedKey = null; applyFocus(); }
+    }
+    function tileKey(participant, source) {
+      return participant.identity + (source === Track.Source.ScreenShare ? '::screen' : '::cam');
+    }
+
+    const room = new Room({ adaptiveStream: true, dynacast: true });
+    const audioEls = new Map();
+
+    function attachTrack(track, publication, participant, isLocal) {
+      const label = (participant.name || participant.identity) +
+        (publication.source === Track.Source.ScreenShare ? ' (画面共有)' : '') +
+        (isLocal ? ' (自分)' : '');
+      if (track.kind === 'video') {
+        const key = tileKey(participant, publication.source);
+        const t = ensureTile(key, label);
+        track.attach(t.videoEl);
+        // 画面共有が始まったら自動で拡大(手動フォーカス中は邪魔しない)
+        if (publication.source === Track.Source.ScreenShare && !focusedKey) {
+          focusedKey = key;
+          applyFocus();
+        }
+        if (isLocal && publication.source !== Track.Source.ScreenShare) {
+          t.videoEl.style.transform = 'scaleX(-1)';  // 自分のカメラはミラー表示
+          t.videoEl.muted = true;
+        }
+      } else if (track.kind === 'audio' && !isLocal) {
+        const a = track.attach();
+        audioEls.set(publication.trackSid, a);
+        document.body.appendChild(a);
+      }
+    }
+    function detachTrack(track, publication, participant) {
+      track.detach();
+      const a = audioEls.get(publication.trackSid);
+      if (a) { a.remove(); audioEls.delete(publication.trackSid); }
+      if (track.kind === 'video') removeTile(tileKey(participant, publication.source));
+    }
+
+    function updateRec() {
+      document.getElementById('recBadge').style.display = room.isRecording ? '' : 'none';
+    }
+
+    room
+      .on(RoomEvent.TrackSubscribed, (track, pub, p) => attachTrack(track, pub, p, false))
+      .on(RoomEvent.TrackUnsubscribed, (track, pub, p) => detachTrack(track, pub, p))
+      .on(RoomEvent.LocalTrackPublished, (pub, p) => { if (pub.track) attachTrack(pub.track, pub, p, true); })
+      .on(RoomEvent.LocalTrackUnpublished, (pub, p) => { if (pub.track) detachTrack(pub.track, pub, p); })
+      .on(RoomEvent.ParticipantDisconnected, (p) => {
+        removeTile(tileKey(p, Track.Source.Camera));
+        removeTile(tileKey(p, Track.Source.ScreenShare));
+      })
+      .on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+        const active = new Set(speakers.map(s => s.identity + '::cam'));
+        for (const [key, t] of tiles) t.el.classList.toggle('speaking', active.has(key));
+      })
+      .on(RoomEvent.RecordingStatusChanged, updateRec)
+      .on(RoomEvent.Disconnected, () => { location.href = '/lobby.html'; });
+
+    async function main() {
+      const res = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/join`, {method: 'POST'});
+      if (res.status === 401) { location.href = '/'; return; }
+      if (!res.ok) { statusEl.textContent = 'ルームに入れませんでした'; return; }
+      const {token, ws_url, title} = await res.json();
+      document.getElementById('roomTitle').textContent = title;
+      document.title = `Telehack — ${title}`;
+      await room.connect(ws_url, token);
+      statusEl.textContent = '接続済み';
+      updateRec();
+      try {
+        await room.localParticipant.enableCameraAndMicrophone();
+      } catch (e) {
+        statusEl.textContent = 'カメラ/マイクが使用できません(視聴のみ)';
+      }
+    }
+
+    // --- 操作ボタン ---
+    let micOn = true, camOn = true, sharing = false;
+    document.getElementById('micBtn').onclick = async (e) => {
+      micOn = !micOn;
+      await room.localParticipant.setMicrophoneEnabled(micOn);
+      e.target.textContent = micOn ? '🎤 ミュート' : '🎤 ミュート解除';
+      e.target.classList.toggle('off', !micOn);
+    };
+    document.getElementById('camBtn').onclick = async (e) => {
+      camOn = !camOn;
+      await room.localParticipant.setCameraEnabled(camOn);
+      e.target.textContent = camOn ? '📷 カメラOFF' : '📷 カメラON';
+      e.target.classList.toggle('off', !camOn);
+    };
+    document.getElementById('shareBtn').onclick = async (e) => {
+      try {
+        sharing = !sharing;
+        await room.localParticipant.setScreenShareEnabled(sharing);
+        e.target.textContent = sharing ? '🖥 共有停止' : '🖥 画面共有';
+      } catch { sharing = false; }
+    };
+    document.getElementById('leaveBtn').onclick = async () => {
+      await room.disconnect();
+      location.href = '/lobby.html';
+    };
+
+    main().catch(err => { console.error(err); statusEl.textContent = '接続エラー: ' + err.message; });
+  </script>
+</body>
+</html>
