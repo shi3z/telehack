@@ -16,3 +16,6 @@ __pycache__/
 # Misc
 nohup.out
 *.log
+
+# Generated demo assets (faces/videos are large and machine-specific)
+test/assets/

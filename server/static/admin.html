@@ -38,6 +38,7 @@
         <button onclick="setPlacement('hall')">📣 全員を全体会場へ召集</button>
         <button onclick="setPlacement('teams')">👥 全員をチームルームへ送出</button>
         <button class="secondary" onclick="setPlacement('free')">🕊 自由行動に戻す</button>
+        <a id="hallLink" href="#"><button class="secondary">🚪 自分も全体会場に入る</button></a>
         <span class="sub" id="plStatus"></span>
       </div>
 
@@ -174,6 +175,7 @@
     async function loadState() {
       state = await api('/api/state');
       document.getElementById('hackName').textContent = '— ' + state.hackathon.name;
+      document.getElementById('hallLink').href = '/room.html?room=' + encodeURIComponent(state.hall_room);
       // 配置
       const pl = state.placement;
       document.getElementById('plStatus').textContent =
@@ -235,9 +237,10 @@
           <td>${r.participants}人 ${r.participants > 0 ? '<span class="badge live">LIVE</span>' : ''}</td>
           <td>${r.recording ? '<span class="badge rec">REC</span>' : (r.auto_record ? '<span style="color:var(--muted);font-size:.8rem">自動</span>' : '<span style="color:var(--muted);font-size:.8rem">手動</span>')}</td>
           <td style="white-space:nowrap">
+            <a href="/room.html?room=${encodeURIComponent(r.name)}"><button class="small">入室</button></a>
             ${r.recording
               ? `<button class="small danger" onclick="recStop('${r.name}')">録画停止</button>`
-              : `<button class="small" onclick="recStart('${r.name}')">録画開始</button>`}
+              : `<button class="small secondary" onclick="recStart('${r.name}')">録画開始</button>`}
             ${r.kind === 'free' ? `<button class="small secondary" onclick="delRoom('${r.name}', '${esc(r.title)}')">削除</button>` : ''}
           </td>
         </tr>`).join('');
