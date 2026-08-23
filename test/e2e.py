@@ -347,16 +347,10 @@ async def main():
 
 
 def cleanup_leftovers():
-    """テスト用ハッカソンとその録画をDBから完全に削除し、元のハッカソンを復元する"""
-    from pathlib import Path
-    recdir = Path(__file__).resolve().parent.parent / "recordings"
+    """テスト用ハッカソンを削除し、元のハッカソンを復元する。
+    録画(MP4ファイルと録画一覧)は削除せず残す。"""
     conn = db()
     for (hid,) in conn.execute("SELECT id FROM hackathons WHERE name = 'E2Eテスト'").fetchall():
-        rooms = [r[0] for r in conn.execute("SELECT name FROM rooms WHERE hackathon_id = ?", (hid,))]
-        for rn in rooms:
-            for (fn,) in conn.execute("SELECT filename FROM recordings WHERE room_name = ?", (rn,)):
-                (recdir / fn).unlink(missing_ok=True)
-            conn.execute("DELETE FROM recordings WHERE room_name = ?", (rn,))
         for t in ("participants", "teams", "rooms", "works", "votes"):
             conn.execute(f"DELETE FROM {t} WHERE hackathon_id = ?", (hid,))
         conn.execute("DELETE FROM hackathons WHERE id = ?", (hid,))
