@@ -28,42 +28,42 @@
     <div class="tabpane active" id="pane-control">
 
       <h2>📢 全ルームへお知らせ</h2>
-      <div class="row">
-        <div><input type="text" id="announceText" placeholder="全ブレイクアウトルームに通知するメッセージ"></div>
-        <div style="flex:0;min-width:auto"><button onclick="announce()">送信</button></div>
+      <div class="ctlrow">
+        <input type="text" id="announceText" class="grow" placeholder="全ブレイクアウトルームに通知するメッセージ">
+        <button onclick="announce()">送信</button>
       </div>
 
       <h2>🚪 参加者の配置(ワンボタン)</h2>
-      <div class="row" style="align-items:center">
-        <div style="flex:0;min-width:auto"><button id="plHall" onclick="setPlacement('hall')">📣 全員を全体会場へ召集</button></div>
-        <div style="flex:0;min-width:auto"><button id="plTeams" onclick="setPlacement('teams')">👥 全員をチームルームへ送出</button></div>
-        <div style="flex:0;min-width:auto"><button id="plFree" class="secondary" onclick="setPlacement('free')">🕊 自由行動に戻す</button></div>
-        <div style="flex:0;min-width:auto"><span class="sub" id="plStatus"></span></div>
+      <div class="ctlrow">
+        <button onclick="setPlacement('hall')">📣 全員を全体会場へ召集</button>
+        <button onclick="setPlacement('teams')">👥 全員をチームルームへ送出</button>
+        <button class="secondary" onclick="setPlacement('free')">🕊 自由行動に戻す</button>
+        <span class="sub" id="plStatus"></span>
       </div>
 
       <h2>⏱ 共有タイマー(全チームに表示)</h2>
-      <div class="row">
-        <div style="flex:0;min-width:120px"><label>分</label><input type="text" id="timerMin" value="60"></div>
-        <div><label>ラベル(任意)</label><input type="text" id="timerLabel" placeholder="開発タイム 残り"></div>
-        <div style="flex:0;min-width:auto"><button onclick="setTimer()">開始</button></div>
-        <div style="flex:0;min-width:auto"><button class="secondary" onclick="clearTimer()">クリア</button></div>
-        <div style="flex:0;min-width:auto"><span class="timerchip" id="timerNow" style="display:none"></span></div>
+      <div class="ctlrow">
+        <div class="field"><label>分</label><input type="text" id="timerMin" value="60" style="width:90px"></div>
+        <div class="field grow"><label>ラベル(任意)</label><input type="text" id="timerLabel" placeholder="開発タイム 残り"></div>
+        <button onclick="setTimer()">開始</button>
+        <button class="secondary" onclick="clearTimer()">クリア</button>
+        <span class="timerchip" id="timerNow" style="display:none"></span>
       </div>
 
       <h2>🎤 発表モード</h2>
       <p class="sub">チームがランダム順で発表します。発表中のチームのカメラ/画面が全ルームに配信され、時間切れで自動的に次のチームへ移ります。</p>
-      <div class="row">
-        <div style="flex:0;min-width:140px"><label>1チームの持ち時間(分)</label><input type="text" id="presMin" value="5"></div>
-        <div style="flex:0;min-width:auto"><button onclick="presStart()">🎬 発表モード開始</button></div>
-        <div style="flex:0;min-width:auto"><button class="secondary" onclick="presNext()">⏭ 次のチームへ</button></div>
-        <div style="flex:0;min-width:auto"><button class="danger" onclick="presStop()">終了</button></div>
+      <div class="ctlrow">
+        <div class="field"><label>1チームの持ち時間(分)</label><input type="text" id="presMin" value="5" style="width:110px"></div>
+        <button onclick="presStart()">🎬 発表モード開始</button>
+        <button class="secondary" onclick="presNext()">⏭ 次のチームへ</button>
+        <button class="danger" onclick="presStop()">終了</button>
       </div>
       <p id="presStatus" class="sub" style="margin-top:10px"></p>
 
       <h2>🗳 作品と投票</h2>
-      <div class="row" style="align-items:center">
-        <div style="flex:0;min-width:auto"><label style="margin:0"><input type="checkbox" id="anonChk"> 作者(チーム名)を匿名にする</label></div>
-        <div style="flex:0;min-width:auto"><label style="margin:0"><input type="checkbox" id="voteChk"> 投票を受け付ける</label></div>
+      <div class="ctlrow">
+        <label class="chk"><input type="checkbox" id="anonChk"> 作者(チーム名)を匿名にする</label>
+        <label class="chk"><input type="checkbox" id="voteChk"> 投票を受け付ける</label>
       </div>
       <table style="margin-top:12px">
         <thead><tr><th>順位</th><th>作品</th><th>チーム</th><th>得票</th></tr></thead>
@@ -72,23 +72,21 @@
 
       <h2>🏆 結果発表(3位 → 2位 → 1位)</h2>
       <p class="sub">ボタンを押すたびに、全参加者の画面でドラムロールと共に1ランクずつ発表されます。</p>
-      <div class="row">
-        <div style="flex:0;min-width:auto"><button onclick="revealNext()">🥁 次の順位を発表する</button></div>
-        <div style="flex:0;min-width:auto"><button class="secondary" onclick="revealReset()">リセット</button></div>
-        <div style="flex:0;min-width:auto"><span class="sub" id="revealStatus"></span></div>
+      <div class="ctlrow">
+        <button onclick="revealNext()">🥁 次の順位を発表する</button>
+        <button class="secondary" onclick="revealReset()">リセット</button>
+        <span class="sub" id="revealStatus"></span>
       </div>
     </div>
 
     <!-- ============ ルーム ============ -->
     <div class="tabpane" id="pane-rooms">
       <h2>フリールームを作成 <span style="font-weight:normal;color:var(--muted);font-size:.8rem">(チームルームは名簿コンソールのチーム作成で自動生成されます)</span></h2>
-      <div class="row">
-        <div><label>ルーム名</label><input type="text" id="roomTitle" placeholder="雑談ルーム"></div>
-        <div><label>説明(任意)</label><input type="text" id="roomDesc"></div>
-        <div style="flex:0;min-width:auto;white-space:nowrap">
-          <label><input type="checkbox" id="roomAutoRec" checked> 自動録画</label>
-        </div>
-        <div style="flex:0;min-width:auto"><button onclick="createRoom()">作成</button></div>
+      <div class="ctlrow">
+        <div class="field grow"><label>ルーム名</label><input type="text" id="roomTitle" placeholder="雑談ルーム"></div>
+        <div class="field grow"><label>説明(任意)</label><input type="text" id="roomDesc"></div>
+        <label class="chk"><input type="checkbox" id="roomAutoRec" checked> 自動録画</label>
+        <button onclick="createRoom()">作成</button>
       </div>
       <h2>ルーム一覧</h2>
       <table>

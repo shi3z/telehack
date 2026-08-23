@@ -446,6 +446,21 @@ async def admin_create_hackathon(body: HackathonIn, user: dict = Depends(require
     return {"ok": True, "id": hid}
 
 
+@app.delete("/api/admin/hackathons/{hid}")
+async def admin_delete_hackathon(hid: int, user: dict = Depends(require_admin)):
+    """非アクティブなハッカソンを完全に削除する(名簿・チーム・ルーム・作品・投票ごと)"""
+    with db.get_db() as conn:
+        h = conn.execute("SELECT * FROM hackathons WHERE id = ?", (hid,)).fetchone()
+        if not h:
+            raise HTTPException(404, "ハッカソンが見つかりません")
+        if h["active"]:
+            raise HTTPException(400, "アクティブなハッカソンは削除できません(先に別のハッカソンへ切り替えてください)")
+        for table in ("participants", "teams", "rooms", "works", "votes"):
+            conn.execute(f"DELETE FROM {table} WHERE hackathon_id = ?", (hid,))
+        conn.execute("DELETE FROM hackathons WHERE id = ?", (hid,))
+    return {"ok": True}
+
+
 @app.post("/api/admin/hackathons/{hid}/activate")
 async def admin_activate_hackathon(hid: int, user: dict = Depends(require_admin)):
     with db.get_db() as conn:

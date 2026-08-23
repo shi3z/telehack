@@ -29,6 +29,7 @@ input:focus, textarea:focus { outline: 2px solid var(--accent); border-color: tr
 button {
   padding: 10px 18px; border: none; border-radius: 8px; font-size: .95rem;
   background: var(--accent); color: #fff; cursor: pointer; font-weight: 600;
+  white-space: nowrap;   /* 日本語ラベルが縦に折れないように */
 }
 button:hover { filter: brightness(1.15); }
 button.secondary { background: var(--panel2); color: var(--text); }
@@ -63,6 +64,16 @@ th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--bor
 th { color: var(--muted); font-weight: 600; font-size: .8rem; }
 .row { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; }
 .row > div { flex: 1; min-width: 160px; }
+/* 操作行: ボタン・入力・チェックを1行に自然に並べる */
+.ctlrow { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin: 12px 0 8px; }
+.ctlrow > * { flex: 0 0 auto; }
+.ctlrow .grow { flex: 1 1 240px; min-width: 200px; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field label { margin: 0; }
+.field input { width: 100%; }
+.chk { display: flex; align-items: center; gap: 7px; margin: 0; white-space: nowrap;
+  font-size: .95rem; color: var(--text); align-self: center; cursor: pointer; }
+.ctlrow .sub, .ctlrow .timerchip { align-self: center; margin: 0; }
 .tabs { display: flex; gap: 4px; margin: 20px 0 0; border-bottom: 1px solid var(--border); }
 .tabs button { background: none; color: var(--muted); border-radius: 8px 8px 0 0; }
 .tabs button.active { background: var(--panel); color: var(--text); }

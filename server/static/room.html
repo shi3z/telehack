@@ -144,7 +144,12 @@
       })
       .on(RoomEvent.DataReceived, (payload) => onData(payload))
       .on(RoomEvent.RecordingStatusChanged, updateRec)
-      .on(RoomEvent.Disconnected, () => { location.href = '/lobby.html'; });
+      .on(RoomEvent.Disconnected, () => { if (!unloading) location.href = '/lobby.html'; });
+
+    // ページ離脱(別ページへの遷移)中は Disconnected でのリダイレクトをしない
+    let unloading = false;
+    window.addEventListener('beforeunload', () => { unloading = true; });
+    window.addEventListener('pagehide', () => { unloading = true; });
 
     // --- ステージ受信 (主催者配信 / 発表の視聴) ---
     const stageRoom = new Room({ adaptiveStream: true });
